@@ -1,0 +1,38 @@
+name: Windows and macOS tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Node.js ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+        node: [18, 22]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Run cross-platform tests
+        run: node --test tests/orca-agent-cleanup.test.mjs
+
+  windows-powershell:
+    name: Windows PowerShell compatibility
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run legacy smoke test
+        shell: powershell
+        run: .\tests\Invoke-SmokeTest.ps1

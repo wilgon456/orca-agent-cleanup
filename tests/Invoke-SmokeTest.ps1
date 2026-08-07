@@ -29,12 +29,13 @@ try {
     $futureOrcaSkill = Join-Path $testHome '.agents\skills\agent-link'
     $paseoSkill = Join-Path $testHome '.agents\skills\paseo'
     $claudeDir = Join-Path $testHome '.claude'
-    New-Item -ItemType Directory -Path $orcaSkill, $futureOrcaSkill, $paseoSkill, $claudeDir, (Join-Path $testHome '.orca'), (Join-Path $roaming 'Orca'), (Join-Path $local 'Orca') -Force | Out-Null
+    New-Item -ItemType Directory -Path $orcaSkill, $futureOrcaSkill, $paseoSkill, $claudeDir, (Join-Path $testHome '.orca\agent-hooks'), (Join-Path $roaming 'Orca'), (Join-Path $local 'Orca') -Force | Out-Null
 
     Set-Content -LiteralPath (Join-Path $orcaSkill 'SKILL.md') -Encoding UTF8 -Value "Use Orca's computer-use CLI. Run ORCA skills get computer-use."
     Set-Content -LiteralPath (Join-Path $futureOrcaSkill 'SKILL.md') -Encoding UTF8 -Value 'Future Orca integration skill.'
     Set-Content -LiteralPath (Join-Path $paseoSkill 'SKILL.md') -Encoding UTF8 -Value 'Paseo reference.'
-    Set-Content -LiteralPath (Join-Path $testHome '.orca\claude-hook.cmd') -Encoding UTF8 -Value '@echo off'
+    Set-Content -LiteralPath (Join-Path $testHome '.orca\agent-hooks\claude-hook.cmd') -Encoding UTF8 -Value '@echo off'
+    Set-Content -LiteralPath (Join-Path $testHome '.orca\user-worktree.txt') -Encoding UTF8 -Value 'keep user work'
     Set-Content -LiteralPath (Join-Path $roaming 'Orca\state.json') -Encoding UTF8 -Value '{}'
     Set-Content -LiteralPath (Join-Path $local 'Orca\state.json') -Encoding UTF8 -Value '{}'
 
@@ -80,7 +81,8 @@ try {
     Assert-True -Condition (-not (Test-Path -LiteralPath $orcaSkill)) -Message 'Orca computer-use skill should be quarantined'
     Assert-True -Condition (-not (Test-Path -LiteralPath $futureOrcaSkill)) -Message 'Any lock-proven Orca skill should be quarantined'
     Assert-True -Condition (Test-Path -LiteralPath $paseoSkill) -Message 'Paseo skill must remain untouched'
-    Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $testHome '.orca'))) -Message '~/.orca should be quarantined'
+    Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $testHome '.orca\agent-hooks'))) -Message 'Orca agent-hooks should be quarantined'
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path $testHome '.orca\user-worktree.txt')) -Message 'Unrelated ~/.orca user files should be preserved'
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $roaming 'Orca'))) -Message 'Roaming Orca data should be quarantined'
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $local 'Orca'))) -Message 'Local Orca data should be quarantined'
 

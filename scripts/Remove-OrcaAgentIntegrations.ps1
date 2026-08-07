@@ -7,9 +7,6 @@ param(
     [switch]$IncludeAppData,
 
     [Parameter()]
-    [switch]$IncludeWorkspaceData,
-
-    [Parameter()]
     [string]$BackupRoot,
 
     [Parameter()]
@@ -101,6 +98,10 @@ function Move-ToQuarantine {
 
     $safeSource = Assert-ExactChildPath -Path $Source -AllowedRoot $AllowedRoot
     $destination = Join-Path $backupFull $RelativeDestination
+    $sourcePrefix = $safeSource.TrimEnd('\') + '\'
+    if ($backupFull -ieq $safeSource -or $backupFull.StartsWith($sourcePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing backup directory inside cleanup target: $safeSource"
+    }
     if (Test-Path -LiteralPath $destination) {
         throw "Quarantine destination already exists: $destination"
     }
@@ -115,7 +116,16 @@ $agentsRoot = Join-Path $homeFull '.agents'
 $skillRoot = Join-Path $agentsRoot 'skills'
 $lockPath = Join-Path $agentsRoot '.skill-lock.json'
 $claudeSettingsPath = Join-Path (Join-Path $homeFull '.claude') 'settings.json'
-$orcaSkillNames = @('orca-cli', 'computer-use', 'orchestration')
+$orcaSkillNames = @(
+    'computer-use',
+    'linear-tickets',
+    'orca-cli',
+    'orca-emulator',
+    'orca-emulator-android',
+    'orca-linear',
+    'orca-per-workspace-env',
+    'orchestration'
+)
 $provenSkills = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 
 if ($PSCmdlet.ShouldProcess($backupFull, 'Create backup directory')) {
@@ -133,7 +143,7 @@ if (Test-Path -LiteralPath $lockPath) {
             $sourceUrlProperty = $entry.PSObject.Properties['sourceUrl']
             $source = if ($null -ne $sourceProperty) { [string]$sourceProperty.Value } else { '' }
             $sourceUrl = if ($null -ne $sourceUrlProperty) { [string]$sourceUrlProperty.Value } else { '' }
-            if ($source -ieq 'stablyai/orca' -or $sourceUrl -match '(?i)github\.com/stablyai/orca') {
+            if ($source -ieq 'stablyai/orca' -or $sourceUrl -match '(?i)github\.com/stablyai/orca(?:\.git)?(?:$|[/#?])') {
                 [void]$provenSkills.Add($property.Name)
             }
         }
@@ -167,7 +177,7 @@ foreach ($name in $candidateSkillNames) {
     $skillFile = Join-Path $folder 'SKILL.md'
     $signatureMatch = $false
     if (Test-Path -LiteralPath $skillFile) {
-        $signatureMatch = [bool](Select-String -Quiet -LiteralPath $skillFile -Pattern "(?i)stablyai/orca|Orca's computer-use CLI|ORCA skills get|Engage Orca")
+        $signatureMatch = [bool](Select-String -Quiet -LiteralPath $skillFile -Pattern "(?i)(?:^|[/:\s])stablyai/orca(?:\.git)?(?:$|[/#?\s])|Orca's computer-use CLI|ORCA skills get|Engage Orca")
     }
 
     if ($provenSkills.Contains($name) -or $signatureMatch) {
@@ -237,15 +247,14 @@ if (Test-Path -LiteralPath $claudeSettingsPath) {
     }
 }
 
-Move-ToQuarantine -Source (Join-Path $homeFull '.orca') -AllowedRoot $homeFull -RelativeDestination 'data\dot-orca'
+$sharedOrcaState = Join-Path $homeFull '.orca'
+foreach ($entry in @('agent-hooks', 'claude-agent-teams-bin', 'managed-hook-install.lock', 'openai-speech-token.enc')) {
+    Move-ToQuarantine -Source (Join-Path $sharedOrcaState $entry) -AllowedRoot $sharedOrcaState -RelativeDestination (Join-Path 'data\dot-orca' $entry)
+}
 
 if ($IncludeAppData) {
     Move-ToQuarantine -Source (Join-Path $roamingFull 'Orca') -AllowedRoot $roamingFull -RelativeDestination 'data\roaming-Orca'
     Move-ToQuarantine -Source (Join-Path $localFull 'Orca') -AllowedRoot $localFull -RelativeDestination 'data\local-Orca'
-}
-
-if ($IncludeWorkspaceData) {
-    Move-ToQuarantine -Source (Join-Path $homeFull 'orca') -AllowedRoot $homeFull -RelativeDestination 'data\workspace-orca'
 }
 
 if (-not $SkipPathCleanup) {
