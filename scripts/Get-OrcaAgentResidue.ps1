@@ -16,7 +16,16 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$orcaSkillNames = @('orca-cli', 'computer-use', 'orchestration')
+$orcaSkillNames = @(
+    'computer-use',
+    'linear-tickets',
+    'orca-cli',
+    'orca-emulator',
+    'orca-emulator-android',
+    'orca-linear',
+    'orca-per-workspace-env',
+    'orchestration'
+)
 $agentsRoot = Join-Path $HomeDirectory '.agents'
 $skillRoot = Join-Path $agentsRoot 'skills'
 $lockPath = Join-Path $agentsRoot '.skill-lock.json'
@@ -24,7 +33,6 @@ $claudeSettingsPath = Join-Path (Join-Path $HomeDirectory '.claude') 'settings.j
 $orcaHookRoot = Join-Path $HomeDirectory '.orca'
 $roamingOrca = Join-Path $RoamingAppData 'Orca'
 $localOrca = Join-Path $LocalAppData 'Orca'
-$workspaceRoot = Join-Path $HomeDirectory 'orca'
 $programRoot = Join-Path $LocalAppData 'Programs\orca'
 $orcaBin = Join-Path $programRoot 'resources\bin'
 
@@ -58,7 +66,7 @@ if (Test-Path -LiteralPath $lockPath) {
                 $sourceUrlProperty = $entry.PSObject.Properties['sourceUrl']
                 $source = if ($null -ne $sourceProperty) { [string]$sourceProperty.Value } else { '' }
                 $sourceUrl = if ($null -ne $sourceUrlProperty) { [string]$sourceUrlProperty.Value } else { '' }
-                if ($source -ieq 'stablyai/orca' -or $sourceUrl -match '(?i)github\.com/stablyai/orca') {
+                if ($source -ieq 'stablyai/orca' -or $sourceUrl -match '(?i)github\.com/stablyai/orca(?:\.git)?(?:$|[/#?])') {
                     [void]$provenSkills.Add($property.Name)
                     Add-Finding -Type 'SkillLockEntry' -Path $lockPath -Evidence "$($property.Name) is sourced from stablyai/orca" -RecommendedAction 'Remove only this lock entry'
                 }
@@ -87,7 +95,7 @@ foreach ($name in $candidateSkillNames) {
     $skillFile = Join-Path $folder 'SKILL.md'
     $signatureMatch = $false
     if (Test-Path -LiteralPath $skillFile) {
-        $signatureMatch = [bool](Select-String -Quiet -LiteralPath $skillFile -Pattern "(?i)stablyai/orca|Orca's computer-use CLI|ORCA skills get|Engage Orca")
+        $signatureMatch = [bool](Select-String -Quiet -LiteralPath $skillFile -Pattern "(?i)(?:^|[/:\s])stablyai/orca(?:\.git)?(?:$|[/#?\s])|Orca's computer-use CLI|ORCA skills get|Engage Orca")
     }
 
     if ($provenSkills.Contains($name) -or $signatureMatch) {
@@ -112,11 +120,16 @@ if (Test-Path -LiteralPath $claudeSettingsPath) {
     }
 }
 
+foreach ($entry in @('agent-hooks', 'claude-agent-teams-bin', 'managed-hook-install.lock', 'openai-speech-token.enc')) {
+    $target = Join-Path $orcaHookRoot $entry
+    if (Test-Path -LiteralPath $target) {
+        Add-Finding -Type 'AgentState' -Path $target -Evidence 'Exact Orca-managed path' -RecommendedAction 'Quarantine only this entry'
+    }
+}
+
 foreach ($candidate in @(
-    @{ Type = 'AgentHooks'; Path = $orcaHookRoot; Action = 'Quarantine ~/.orca' },
     @{ Type = 'RoamingAppData'; Path = $roamingOrca; Action = 'Optionally quarantine with -IncludeAppData' },
     @{ Type = 'LocalAppData'; Path = $localOrca; Action = 'Optionally quarantine with -IncludeAppData' },
-    @{ Type = 'WorkspaceData'; Path = $workspaceRoot; Action = 'Review carefully; optionally quarantine with -IncludeWorkspaceData' },
     @{ Type = 'ProgramFiles'; Path = $programRoot; Action = 'Uninstall Orca from Windows Settings first' }
 )) {
     if (Test-Path -LiteralPath $candidate.Path) {

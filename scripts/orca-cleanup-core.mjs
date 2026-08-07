@@ -14,17 +14,29 @@ export const OFFICIAL_ORCA_SKILLS = Object.freeze([
   'orchestration',
 ]);
 
-const ORCA_SOURCE_PATTERN = /(?:github\.com\/)?stablyai\/orca/i;
+const ORCA_SOURCE_PATTERN = /(?:^|[\s/:])stablyai\/orca(?:\.git)?(?:$|[\s/#?])/i;
 const ORCA_SKILL_SIGNATURES = [
-  /(?:github\.com\/)?stablyai\/orca/i,
+  ORCA_SOURCE_PATTERN,
   /\bORCA\s+skills\s+get\b/i,
   /\bEngage\s+Orca\b/i,
   /Use Orca(?:'s|’s)? computer-use CLI/i,
 ];
-const ORCA_HOOK_PATTERN = /(?:[\\/]\.orca[\\/]agent-hooks[\\/]|ORCA_AGENT_HOOK|orca-(?:agent-)?(?:hook|status))/i;
+const ORCA_HOOK_PATTERN = /(?:[\\/]\.orca[\\/]agent-hooks[\\/]|ORCA_AGENT_HOOK)/i;
 const MANAGED_FILE_PATTERN = /Managed by Orca\. Do not edit; changes may be overwritten\./i;
 const KIMI_START = '# >>> orca-managed-kimi-hooks (managed by Orca; do not edit) >>>';
 const KIMI_END = '# <<< orca-managed-kimi-hooks <<<';
+const ORCA_VOICE_MODEL_IDS = new Set([
+  'parakeet-tdt-0.6b-v3-int8',
+  'parakeet-tdt-0.6b-v2-int8',
+  'zipformer-bilingual-zh-en',
+  'paraformer-bilingual-zh-en',
+  'zipformer-streaming-en-20m',
+  'zipformer-streaming-zh-14m',
+  'zipformer-streaming-korean',
+  'parakeet-tdt-ctc-0.6b-ja-int8',
+  'whisper-tiny',
+  'sense-voice-zh-en-ja-ko-yue',
+]);
 
 function unique(values) {
   return [...new Set(values.filter(Boolean).map((value) => path.resolve(value)))];
@@ -96,8 +108,9 @@ function defaultAppDataCandidates(platform, home, env) {
   if (platform === 'darwin') {
     return [
       path.join(home, 'Library', 'Application Support', 'Orca'),
-      path.join(home, 'Library', 'Caches', 'Orca'),
-      path.join(home, 'Library', 'Logs', 'Orca'),
+      path.join(home, 'Library', 'Caches', 'com.stablyai.orca'),
+      path.join(home, 'Library', 'Caches', 'com.stablyai.orca.ShipIt'),
+      path.join(home, 'Library', 'HTTPStorages', 'com.stablyai.orca'),
       path.join(home, 'Library', 'Preferences', 'com.stablyai.orca.plist'),
       path.join(home, 'Library', 'Saved Application State', 'com.stablyai.orca.savedState'),
     ];
@@ -168,10 +181,15 @@ export function buildContext(overrides = {}) {
     skillRoots: unique([...homeSkillRoots, ...projectSkillRoots]),
     lockFiles,
     hookCandidates: overrides.hookCandidates || defaultHookCandidates(home, env),
+    sharedStateCandidates: unique(overrides.sharedStateCandidates || [
+      path.join(home, '.orca', 'agent-hooks'),
+      path.join(home, '.orca', 'claude-agent-teams-bin'),
+      path.join(home, '.orca', 'managed-hook-install.lock'),
+      path.join(home, '.orca', 'openai-speech-token.enc'),
+    ]),
     appDataCandidates: unique(overrides.appDataCandidates || defaultAppDataCandidates(platform, home, env)),
     voiceCandidates: unique([...(overrides.voiceCandidates || defaultVoiceCandidates(platform, env)), ...(overrides.customVoicePaths || [])]),
     customVoicePaths: unique(overrides.customVoicePaths || []),
-    workspaceCandidates: unique(overrides.workspaceCandidates || [path.join(home, 'orca')]),
     cliCandidates: unique(overrides.cliCandidates || (platform === 'darwin'
       ? ['/usr/local/bin/orca', path.join(home, '.local', 'bin', 'orca')]
       : [])),
@@ -201,14 +219,17 @@ function entriesFromLock(lock) {
   return result;
 }
 
-function lockedOrcaSkillNames(context) {
-  const names = new Set();
+function lockedOrcaSkillNamesByRoot(context) {
+  const namesByRoot = new Map();
   for (const lockFile of context.lockFiles) {
+    const skillRoot = path.resolve(path.dirname(lockFile), 'skills');
+    const names = namesByRoot.get(skillRoot) || new Set();
     for (const entry of entriesFromLock(readJson(lockFile))) {
       if (ORCA_SOURCE_PATTERN.test(entry.source)) names.add(entry.name);
     }
+    namesByRoot.set(skillRoot, names);
   }
-  return names;
+  return namesByRoot;
 }
 
 function hasOrcaSkillSignature(skillPath) {
@@ -251,15 +272,37 @@ function hasHookMarker(candidate) {
   return ORCA_HOOK_PATTERN.test(text) || MANAGED_FILE_PATTERN.test(text);
 }
 
+function hasOrcaVoiceModelSignature(target) {
+  const containsKnownModel = (directory) => {
+    try {
+      return fs.readdirSync(directory, { withFileTypes: true }).some((entry) => {
+        const normalized = entry.name.replace(/(?:\.partial|\.tar\.bz2)$/i, '');
+        return ORCA_VOICE_MODEL_IDS.has(normalized);
+      });
+    } catch {
+      return false;
+    }
+  };
+  if (containsKnownModel(target)) return true;
+  try {
+    return fs.readdirSync(target, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /^[a-f0-9]{16}$/i.test(entry.name))
+      .some((entry) => containsKnownModel(path.join(target, entry.name)));
+  } catch {
+    return false;
+  }
+}
+
 function finding(kind, target, reason, requires = null, meta = {}) {
   return { kind, path: path.resolve(target), reason, requires, ...meta };
 }
 
 export function scanOrcaResidue(context) {
   const findings = [];
-  const lockedNames = lockedOrcaSkillNames(context);
+  const lockedNamesByRoot = lockedOrcaSkillNamesByRoot(context);
 
   for (const root of context.skillRoots) {
+    const lockedNames = lockedNamesByRoot.get(path.resolve(root)) || new Set();
     for (const name of OFFICIAL_ORCA_SKILLS) {
       const skillPath = path.join(root, name);
       if (!pathExists(skillPath)) continue;
@@ -278,24 +321,31 @@ export function scanOrcaResidue(context) {
   }
 
   for (const candidate of context.hookCandidates) {
+    if (candidate.type === 'hermes-config') {
+      const plugin = context.hookCandidates.find((item) => item.type === 'hermes');
+      if (!plugin || !hasHookMarker(plugin)) continue;
+    }
     if (hasHookMarker(candidate)) {
       findings.push(finding('hook', candidate.path, `Orca 관리형 ${candidate.type} 훅`, null, { hookType: candidate.type }));
     }
   }
 
-  const sharedState = path.join(context.home, '.orca');
-  if (pathExists(sharedState)) {
-    findings.push(finding('shared-state', sharedState, '공용 훅·음성 토큰·Orca 상태 데이터'));
+  for (const target of context.sharedStateCandidates) {
+    if (pathExists(target)) {
+      findings.push(finding('shared-state', target, '경로가 고정된 Orca 훅·음성 토큰·관리 파일'));
+    }
   }
 
   for (const target of context.appDataCandidates) {
     if (pathExists(target)) findings.push(finding('app-data', target, 'Orca 애플리케이션 데이터', 'includeAppData'));
   }
   for (const target of context.voiceCandidates) {
-    if (pathExists(target)) findings.push(finding('voice-data', target, 'Orca 음성 모델 캐시', 'includeVoiceData'));
-  }
-  for (const target of context.workspaceCandidates) {
-    if (pathExists(target)) findings.push(finding('workspace', target, 'Orca 워크스페이스(사용자 파일 포함 가능)', 'includeWorkspaceData'));
+    if (!pathExists(target)) continue;
+    if (hasOrcaVoiceModelSignature(target)) {
+      findings.push(finding('voice-data', target, 'Orca 음성 모델 캐시', 'includeVoiceData'));
+    } else {
+      findings.push(finding('unverified', target, 'Orca 음성 모델 서명을 확인할 수 없어 자동 정리하지 않음', 'never'));
+    }
   }
   for (const target of context.cliCandidates) {
     if (isOrcaCli(target)) findings.push(finding('cli', target, 'Orca.app를 가리키는 CLI 런처'));
@@ -316,11 +366,27 @@ function safeRelative(target) {
   return path.join(rootLabel, withoutRoot);
 }
 
+function isSameOrDescendant(parent, candidate) {
+  const relative = path.relative(path.resolve(parent), path.resolve(candidate));
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function assertSafeQuarantineSource(source, context) {
+  const resolved = path.resolve(source);
+  if (resolved === path.parse(resolved).root || resolved === path.resolve(context.home)) {
+    throw new Error(`사용자 홈 또는 파일시스템 루트는 격리할 수 없습니다: ${resolved}`);
+  }
+  if (isSameOrDescendant(resolved, context.backupRoot)) {
+    throw new Error(`백업 폴더가 정리 대상 내부에 있어 작업을 거부했습니다: ${resolved}`);
+  }
+}
+
 function ensureParent(target) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
 }
 
 function quarantine(source, context, category, dryRun) {
+  assertSafeQuarantineSource(source, context);
   const destination = path.join(context.backupRoot, category, safeRelative(source));
   if (dryRun) return destination;
   ensureParent(destination);
@@ -449,8 +515,11 @@ function removeLockEntries(target, names, context, dryRun) {
     if (!container || typeof container !== 'object' || Array.isArray(container)) continue;
     for (const [name, details] of Object.entries(container)) {
       if (!wanted.has(name)) continue;
-      const normalized = typeof details === 'string' ? details : JSON.stringify(details);
-      if (ORCA_SOURCE_PATTERN.test(normalized)) {
+      const source = typeof details === 'string'
+        ? details
+        : [details?.source, details?.sourceUrl, details?.repository, details?.repo, details?.url]
+          .filter(Boolean).join(' ');
+      if (ORCA_SOURCE_PATTERN.test(source)) {
         delete container[name];
         changed = true;
       }

@@ -39,11 +39,10 @@ Orca 앱을 제거해도 공용 스킬 폴더와 각 에이전트 설정에는 �
 | Orca 공식 스킬 8종 | ✅ | ✅ | ✅ |
 | `computer-use`·`orca-cli`·`orchestration` | ✅ | ✅ | ✅ |
 | Claude·Codex·Gemini 등 Orca 관리형 훅 | ✅ | ✅ | ✅ |
-| `~/.orca` 공용 훅·상태·암호화 음성 토큰 | ✅ | ✅ | ✅ |
+| `~/.orca`의 관리형 훅·암호화 음성 토큰 | ✅ | ✅ | ✅ |
 | Orca CLI 경로·런처 | ✅ | ✅ | ✅ |
 | Orca 앱 데이터와 기본 음성 모델 | ✅ | ✅ | `--include-app-data` |
 | 별도·사용자 지정 음성 모델 경로 | ✅ | ✅ | `--include-voice-data` |
-| `~/orca` 워크스페이스 | ✅ | ✅ | `--include-workspace-data` |
 
 > [!TIP]
 > **Orca 전용 정리 도구입니다.** Claude, Codex, Gemini 자체와 OpenAI 공식 `computer-use`, Paseo 및 다른 공급자의 스킬은 제거하지 않습니다.
@@ -88,7 +87,7 @@ node scripts/orca-agent-cleanup.mjs clean --include-app-data --include-voice-dat
 | 환경 | 지원 내용 |
 | --- | --- |
 | Windows 10·11 | 공용·에이전트별 스킬, 관리형 훅, `%APPDATA%`·`%LOCALAPPDATA%`, `ProgramData`·`Public` 음성 캐시, 사용자 `PATH` |
-| macOS | 공용·에이전트별 스킬, 관리형 훅, `~/Library` 앱 데이터·음성 캐시, `/usr/local/bin/orca`·`~/.local/bin/orca` |
+| macOS | 공용·에이전트별 스킬, 관리형 훅, `~/Library`의 Stably 앱 데이터·음성 캐시, `/usr/local/bin/orca`·`~/.local/bin/orca` |
 
 > [!NOTE]
 > Linux와 WSL은 현재 정식 테스트 대상이 아닙니다. macOS와 Windows용 경로를 Linux 환경에 그대로 적용하지 마세요.
@@ -143,7 +142,8 @@ Amp / Droid / Command Code / Grok / Copilot / Hermes / Devin / Kimi
 
 - Windows 사용자 `PATH`의 공식 Orca CLI 경로
 - macOS에서 Orca 앱을 가리키는 `/usr/local/bin/orca`, `~/.local/bin/orca`
-- `~/.orca`의 공용 훅, 상태 데이터, 암호화된 음성 API 토큰
+- `~/.orca/agent-hooks` 관리형 훅과 `openai-speech-token.enc` 음성 토큰
+- `~/.orca` 전체와 그 안의 worktree·사용자 파일은 보존
 
 macOS 런처는 심볼릭 링크 대상 또는 파일 내용이 `Orca.app`을 가리키는 경우에만 격리합니다. 같은 이름의 무관한 명령은 유지합니다.
 
@@ -154,8 +154,9 @@ macOS 런처는 심볼릭 링크 대상 또는 파일 내용이 `Orca.app`을 �
 | Windows | macOS |
 | --- | --- |
 | `%APPDATA%\Orca` | `~/Library/Application Support/Orca` |
-| `%LOCALAPPDATA%\Orca` | `~/Library/Caches/Orca` |
-|  | `~/Library/Logs/Orca` |
+| `%LOCALAPPDATA%\Orca` | `~/Library/Caches/com.stablyai.orca` |
+|  | `~/Library/Caches/com.stablyai.orca.ShipIt` |
+|  | `~/Library/HTTPStorages/com.stablyai.orca` |
 |  | `~/Library/Preferences/com.stablyai.orca.plist` |
 |  | `~/Library/Saved Application State/com.stablyai.orca.savedState` |
 
@@ -171,14 +172,6 @@ node scripts/orca-agent-cleanup.mjs clean --dry-run \
 
 PowerShell에서는 줄 연결 문자 대신 한 줄로 실행하거나 백틱(``)을 사용하면 됩니다.
 
-### 워크스페이스는 기본 제외
-
-`~/orca`에는 실제 Git 저장소와 작업물이 있을 수 있으므로 기본적으로 정리하지 않습니다. 내용을 확인한 뒤에만 사용하세요.
-
-```bash
-node scripts/orca-agent-cleanup.mjs clean --dry-run --include-workspace-data
-```
-
 ## 🛡️ 안전하게 동작하는 이유
 
 1. **기본 명령은 검사 전용입니다.** `scan`은 파일을 변경하지 않습니다.
@@ -188,6 +181,20 @@ node scripts/orca-agent-cleanup.mjs clean --dry-run --include-workspace-data
 5. **미리보기를 제공합니다.** `clean --dry-run`으로 실제 작업 전에 확인할 수 있습니다.
 6. **반복 실행할 수 있습니다.** 이미 정리된 환경에서는 추가 변경 없이 끝납니다.
 
+### 자동 정리 승인 조건
+
+| 항목 | 자동 정리되는 조건 |
+| --- | --- |
+| 스킬 | 공식 이름 8종이면서 해당 스킬 폴더의 `stablyai/orca` 잠금 출처 또는 Orca 고유 문구가 확인됨 |
+| 프로젝트 스킬 | `--project`로 지정한 해당 프로젝트의 잠금 파일과 스킬 폴더가 서로 일치함 |
+| 에이전트 훅 | 명령이 정확히 `.orca/agent-hooks`를 참조하거나 Orca 관리 표식이 확인됨 |
+| 음성 캐시 | 경로 안에서 Orca 공식 음성 모델 ID가 확인됨 |
+| macOS CLI | 런처가 실제 `Orca.app/Contents/Resources/bin`을 가리킴 |
+| Windows PATH | `%LOCALAPPDATA%\Programs\orca\resources\bin`과 정확히 일치함 |
+| 앱 데이터 | 운영체제별 공식 Orca 경로이며 사용자가 `--include-app-data`를 명시함 |
+
+조건을 만족하지 않는 동명 항목은 `unverified`로 표시하고 자동 정리하지 않습니다. 사용자 홈, 파일시스템 루트 또는 정리 대상 안에 지정된 백업 폴더도 거부합니다.
+
 기본 백업 위치:
 
 ```text
@@ -196,7 +203,7 @@ node scripts/orca-agent-cleanup.mjs clean --dry-run --include-workspace-data
 ├── config-original/    # 수정 전 설정·PATH
 ├── skill/              # 격리한 스킬
 ├── hook/               # 격리한 관리형 훅
-├── shared-state/       # ~/.orca
+├── shared-state/       # ~/.orca 안의 확인된 훅·음성 토큰만
 ├── app-data/           # 앱 데이터
 ├── voice-data/         # 별도 음성 모델
 └── cli/                # CLI 런처
@@ -211,7 +218,6 @@ node scripts/orca-agent-cleanup.mjs clean --dry-run --include-workspace-data
 | `--dry-run` | `clean` 예정 작업만 표시합니다. |
 | `--include-app-data` | Orca 앱 데이터와 그 안의 기본 음성 모델을 포함합니다. |
 | `--include-voice-data` | Windows의 별도 음성 캐시와 지정한 음성 경로를 포함합니다. |
-| `--include-workspace-data` | `~/orca` 작업 폴더를 포함합니다. 사용자 파일에 주의하세요. |
 | `--project <경로>` | 프로젝트 스킬 위치를 추가합니다. 반복 지정할 수 있습니다. |
 | `--voice-model-path <경로>` | 사용자 지정 음성 모델 위치를 추가합니다. 반복 지정할 수 있습니다. |
 | `--backup-root <경로>` | 백업·격리 폴더를 직접 지정합니다. |
@@ -241,6 +247,7 @@ node scripts/orca-agent-cleanup.mjs --help
 - macOS 개인정보 보호 및 보안의 접근성·마이크·화면 기록 권한 변경
 - Windows 설치 관리자 항목 또는 레지스트리의 앱 제거 정보 삭제
 - 출처를 확인할 수 없는 동명 스킬 삭제
+- `~/orca` 및 프로젝트 안의 사용자 워크스페이스·소스 코드 삭제
 - 과거 채팅·세션 기록에서 `orca`라는 문자열만 지우는 작업
 
 Orca 앱이 아직 설치되어 있다면 먼저 정상 제거하세요.
@@ -287,14 +294,14 @@ Windows 전용 기존 도구의 회귀 테스트:
 <details>
 <summary><strong>음성 API 키도 남아 있나요?</strong></summary>
 
-Orca가 저장한 암호화 음성 토큰은 `~/.orca/openai-speech-token.enc`에 있으므로 기본 정리 범위인 `~/.orca`와 함께 격리됩니다. 운영체제 키체인이나 다른 프로그램의 API 키는 건드리지 않습니다.
+Orca가 저장한 암호화 음성 토큰 `~/.orca/openai-speech-token.enc`만 개별 격리합니다. `~/.orca` 전체, 운영체제 키체인과 다른 프로그램의 API 키는 건드리지 않습니다.
 
 </details>
 
 <details>
 <summary><strong>왜 바로 영구 삭제하지 않나요?</strong></summary>
 
-설정과 워크스페이스에는 인증 정보나 작업 파일이 포함될 수 있습니다. AI 에이전트가 정상 동작하는지 확인할 때까지 복구 가능성을 남기는 편이 안전합니다.
+설정과 앱 데이터에는 인증 정보나 사용자 파일이 포함될 수 있습니다. AI 에이전트가 정상 동작하는지 확인할 때까지 복구 가능성을 남기는 편이 안전합니다.
 
 </details>
 

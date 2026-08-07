@@ -18,7 +18,6 @@ Orca Agent Cleanup — Windows/macOS 공통 정리 도구
   --dry-run                    clean의 예정 작업만 표시합니다.
   --include-app-data           Orca 앱 데이터·캐시를 포함합니다.
   --include-voice-data         별도 음성 모델 캐시를 포함합니다.
-  --include-workspace-data     ~/orca 워크스페이스를 포함합니다. 주의해서 사용하세요.
   --project <경로>             프로젝트 내부 .agents/.claude 스킬도 검사합니다(반복 가능).
   --voice-model-path <경로>    사용자 지정 음성 모델 경로를 포함합니다(반복 가능).
   --backup-root <경로>         격리·백업 폴더를 지정합니다.
@@ -34,7 +33,7 @@ Orca Agent Cleanup — Windows/macOS 공통 정리 도구
 function parseArgs(argv) {
   const result = {
     command: 'scan', projects: [], customVoicePaths: [], json: false,
-    dryRun: false, includeAppData: false, includeVoiceData: false, includeWorkspaceData: false,
+    dryRun: false, includeAppData: false, includeVoiceData: false,
   };
   const args = [...argv];
   if (args[0] && !args[0].startsWith('-')) result.command = args.shift();
@@ -43,7 +42,6 @@ function parseArgs(argv) {
     if (arg === '--dry-run') result.dryRun = true;
     else if (arg === '--include-app-data') result.includeAppData = true;
     else if (arg === '--include-voice-data') result.includeVoiceData = true;
-    else if (arg === '--include-workspace-data') result.includeWorkspaceData = true;
     else if (arg === '--json') result.json = true;
     else if (arg === '-h' || arg === '--help') result.help = true;
     else if (arg === '--project') result.projects.push(requireValue(arg, args));
@@ -63,7 +61,7 @@ function requireValue(option, args) {
 
 function icon(kind) {
   return ({ skill: '🧩', 'skill-lock': '🔒', hook: '🪝', 'shared-state': '🔗',
-    'app-data': '🗂️', 'voice-data': '🎙️', workspace: '📁', cli: '⌨️', 'path-entry': '🛣️' })[kind] || '•';
+    'app-data': '🗂️', 'voice-data': '🎙️', cli: '⌨️', 'path-entry': '🛣️', unverified: '🛡️' })[kind] || '•';
 }
 
 function printScan(findings) {
