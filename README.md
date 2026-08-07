@@ -3,10 +3,10 @@
 # 🐋 Orca Agent Cleanup
 
 **Orca 제거 후에도 AI 에이전트가 Orca CLI·Computer Use를 계속 호출하나요?**<br>
-남아 있는 스킬, 훅, CLI, 음성 모델과 앱 데이터를 찾아 복구 가능하게 격리합니다.
+Windows와 macOS에 남아 있는 Orca 스킬, 훅, CLI, 음성 모델과 앱 데이터를 찾아 복구 가능하게 격리합니다.
 
-[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)](#-지원-환경)
-[![macOS](https://img.shields.io/badge/macOS-지원-000000?logo=apple&logoColor=white)](#-지원-환경)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)](#-지원-운영체제)
+[![macOS](https://img.shields.io/badge/macOS-지원-000000?logo=apple&logoColor=white)](#-지원-운영체제)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![Tests](https://github.com/wilgon456/orca-agent-cleanup/actions/workflows/test.yml/badge.svg)](https://github.com/wilgon456/orca-agent-cleanup/actions/workflows/test.yml)
 [![License](https://img.shields.io/github/license/wilgon456/orca-agent-cleanup?color=2ea44f)](LICENSE)
@@ -31,6 +31,22 @@ Orca 앱을 제거해도 공용 스킬 폴더와 각 에이전트 설정에는 �
 - 앱 데이터와 음성 모델이 디스크 공간을 계속 차지함
 
 이 도구는 [Orca 공식 저장소](https://github.com/stablyai/orca)의 현재 스킬 manifest와 설치 코드를 기준으로 잔재를 식별합니다.
+
+## ✅ 지원 범위 한눈에 보기
+
+| 정리 대상 | Windows | macOS | 기본 정리 |
+| --- | :---: | :---: | :---: |
+| Orca 공식 스킬 8종 | ✅ | ✅ | ✅ |
+| `computer-use`·`orca-cli`·`orchestration` | ✅ | ✅ | ✅ |
+| Claude·Codex·Gemini 등 Orca 관리형 훅 | ✅ | ✅ | ✅ |
+| `~/.orca` 공용 훅·상태·암호화 음성 토큰 | ✅ | ✅ | ✅ |
+| Orca CLI 경로·런처 | ✅ | ✅ | ✅ |
+| Orca 앱 데이터와 기본 음성 모델 | ✅ | ✅ | `--include-app-data` |
+| 별도·사용자 지정 음성 모델 경로 | ✅ | ✅ | `--include-voice-data` |
+| `~/orca` 워크스페이스 | ✅ | ✅ | `--include-workspace-data` |
+
+> [!TIP]
+> **Orca 전용 정리 도구입니다.** Claude, Codex, Gemini 자체와 OpenAI 공식 `computer-use`, Paseo 및 다른 공급자의 스킬은 제거하지 않습니다.
 
 ## 🚀 빠른 시작
 
@@ -67,12 +83,12 @@ node scripts/orca-agent-cleanup.mjs clean --include-app-data --include-voice-dat
 
 정리가 끝나면 Claude, Codex와 터미널을 완전히 종료한 뒤 다시 실행하세요. 기존 세션이 스킬 목록이나 환경 변수를 캐시하고 있을 수 있습니다.
 
-## 🖥️ 지원 환경
+## 🖥️ 지원 운영체제
 
 | 환경 | 지원 내용 |
 | --- | --- |
-| Windows 10·11 | 스킬, 에이전트 훅, `%APPDATA%`·`%LOCALAPPDATA%`, 별도 음성 캐시, 사용자 `PATH` |
-| macOS | 스킬, 에이전트 훅, `~/Library` 앱 데이터, 음성 캐시, `/usr/local/bin/orca`·`~/.local/bin/orca` |
+| Windows 10·11 | 공용·에이전트별 스킬, 관리형 훅, `%APPDATA%`·`%LOCALAPPDATA%`, `ProgramData`·`Public` 음성 캐시, 사용자 `PATH` |
+| macOS | 공용·에이전트별 스킬, 관리형 훅, `~/Library` 앱 데이터·음성 캐시, `/usr/local/bin/orca`·`~/.local/bin/orca` |
 
 > [!NOTE]
 > Linux와 WSL은 현재 정식 테스트 대상이 아닙니다. macOS와 Windows용 경로를 Linux 환경에 그대로 적용하지 마세요.
