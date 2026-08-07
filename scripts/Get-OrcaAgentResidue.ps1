@@ -50,11 +50,14 @@ function Add-Finding {
 if (Test-Path -LiteralPath $lockPath) {
     try {
         $lock = Get-Content -Raw -LiteralPath $lockPath | ConvertFrom-Json
-        if ($null -ne $lock.skills) {
-            foreach ($property in @($lock.skills.PSObject.Properties)) {
+        $lockSkillsProperty = $lock.PSObject.Properties['skills']
+        if ($null -ne $lockSkillsProperty) {
+            foreach ($property in @($lockSkillsProperty.Value.PSObject.Properties)) {
                 $entry = $property.Value
-                $source = [string]$entry.source
-                $sourceUrl = [string]$entry.sourceUrl
+                $sourceProperty = $entry.PSObject.Properties['source']
+                $sourceUrlProperty = $entry.PSObject.Properties['sourceUrl']
+                $source = if ($null -ne $sourceProperty) { [string]$sourceProperty.Value } else { '' }
+                $sourceUrl = if ($null -ne $sourceUrlProperty) { [string]$sourceUrlProperty.Value } else { '' }
                 if ($source -ieq 'stablyai/orca' -or $sourceUrl -match '(?i)github\.com/stablyai/orca') {
                     [void]$provenSkills.Add($property.Name)
                     Add-Finding -Type 'SkillLockEntry' -Path $lockPath -Evidence "$($property.Name) is sourced from stablyai/orca" -RecommendedAction 'Remove only this lock entry'

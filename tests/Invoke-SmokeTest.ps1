@@ -11,6 +11,7 @@ $testHome = Join-Path $testRoot 'home'
 $roaming = Join-Path $testRoot 'roaming'
 $local = Join-Path $testRoot 'local'
 $backup = Join-Path $testRoot 'backup'
+$secondBackup = Join-Path $testRoot 'backup-second-run'
 
 function Assert-True {
     param(
@@ -93,6 +94,8 @@ try {
     Assert-True -Condition (-not ($commands -match '\.orca[\\/]agent-hooks')) -Message 'Orca Claude hook should be removed'
     Assert-True -Condition ($null -eq $cleanSettings.PSObject.Properties['statusLine']) -Message 'Orca status line should be removed'
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path $backup 'skills\computer-use')) -Message 'Skill backup should exist'
+
+    & $cleaner -Apply -IncludeAppData -HomeDirectory $testHome -RoamingAppData $roaming -LocalAppData $local -BackupRoot $secondBackup -SkipPathCleanup -Confirm:$false
 
     Write-Host 'Smoke test passed.' -ForegroundColor Green
 }

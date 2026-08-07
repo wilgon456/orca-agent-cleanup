@@ -124,10 +124,16 @@ if ($PSCmdlet.ShouldProcess($backupFull, 'Create backup directory')) {
 
 if (Test-Path -LiteralPath $lockPath) {
     $lock = Get-Content -Raw -LiteralPath $lockPath | ConvertFrom-Json
-    if ($null -ne $lock.skills) {
-        foreach ($property in @($lock.skills.PSObject.Properties)) {
+    $lockSkillsProperty = $lock.PSObject.Properties['skills']
+    if ($null -ne $lockSkillsProperty) {
+        $lockSkills = $lockSkillsProperty.Value
+        foreach ($property in @($lockSkills.PSObject.Properties)) {
             $entry = $property.Value
-            if ([string]$entry.source -ieq 'stablyai/orca' -or [string]$entry.sourceUrl -match '(?i)github\.com/stablyai/orca') {
+            $sourceProperty = $entry.PSObject.Properties['source']
+            $sourceUrlProperty = $entry.PSObject.Properties['sourceUrl']
+            $source = if ($null -ne $sourceProperty) { [string]$sourceProperty.Value } else { '' }
+            $sourceUrl = if ($null -ne $sourceUrlProperty) { [string]$sourceUrlProperty.Value } else { '' }
+            if ($source -ieq 'stablyai/orca' -or $sourceUrl -match '(?i)github\.com/stablyai/orca') {
                 [void]$provenSkills.Add($property.Name)
             }
         }
@@ -137,7 +143,7 @@ if (Test-Path -LiteralPath $lockPath) {
         Backup-File -Source $lockPath -RelativeDestination 'config\agents-skill-lock.json'
         if ($PSCmdlet.ShouldProcess($lockPath, "Remove stablyai/orca lock entries: $($provenSkills -join ', ')")) {
             foreach ($name in @($provenSkills)) {
-                $lock.skills.PSObject.Properties.Remove($name)
+                $lockSkills.PSObject.Properties.Remove($name)
             }
             Write-Utf8Json -InputObject $lock -Path $lockPath
         }
@@ -175,16 +181,22 @@ foreach ($name in $candidateSkillNames) {
 if (Test-Path -LiteralPath $claudeSettingsPath) {
     $settings = Get-Content -Raw -LiteralPath $claudeSettingsPath | ConvertFrom-Json
     $settingsChanged = $false
+    $hooksProperty = $settings.PSObject.Properties['hooks']
 
-    if ($null -ne $settings.hooks) {
-        foreach ($eventName in @($settings.hooks.PSObject.Properties.Name)) {
-            $eventProperty = $settings.hooks.PSObject.Properties[$eventName]
+    if ($null -ne $hooksProperty) {
+        $hooks = $hooksProperty.Value
+        foreach ($eventName in @($hooks.PSObject.Properties.Name)) {
+            $eventProperty = $hooks.PSObject.Properties[$eventName]
             $keptGroups = [System.Collections.Generic.List[object]]::new()
 
             foreach ($group in @($eventProperty.Value)) {
-                $keptHooks = @($group.hooks | Where-Object {
+                $originalHooks = @($group.hooks)
+                $keptHooks = @($originalHooks | Where-Object {
                     [string]$_.command -notmatch '(?i)\.orca[\\/]agent-hooks'
                 })
+                if ($keptHooks.Count -ne $originalHooks.Count) {
+                    $settingsChanged = $true
+                }
 
                 if ($keptHooks.Count -gt 0) {
                     $group.hooks = $keptHooks
@@ -196,7 +208,7 @@ if (Test-Path -LiteralPath $claudeSettingsPath) {
             }
 
             if ($keptGroups.Count -eq 0) {
-                $settings.hooks.PSObject.Properties.Remove($eventName)
+                $hooks.PSObject.Properties.Remove($eventName)
                 $settingsChanged = $true
             }
             elseif ($keptGroups.Count -ne @($eventProperty.Value).Count) {
@@ -205,13 +217,14 @@ if (Test-Path -LiteralPath $claudeSettingsPath) {
             }
         }
 
-        if (@($settings.hooks.PSObject.Properties).Count -eq 0) {
+        if (@($hooks.PSObject.Properties).Count -eq 0) {
             $settings.PSObject.Properties.Remove('hooks')
             $settingsChanged = $true
         }
     }
 
-    if ($null -ne $settings.statusLine -and [string]$settings.statusLine.command -match '(?i)\.orca[\\/]agent-hooks') {
+    $statusLineProperty = $settings.PSObject.Properties['statusLine']
+    if ($null -ne $statusLineProperty -and [string]$statusLineProperty.Value.command -match '(?i)\.orca[\\/]agent-hooks') {
         $settings.PSObject.Properties.Remove('statusLine')
         $settingsChanged = $true
     }

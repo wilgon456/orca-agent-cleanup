@@ -6,6 +6,8 @@ Safely audit and disable agent integrations left behind by a
 Windows에서 Orca 제거 후에도 Claude Code나 Codex가 계속 Orca CLI를 선택하는
 문제를 진단하고 정리하는 PowerShell 도구입니다.
 
+This community project is not affiliated with or endorsed by the Orca project.
+
 ## What it cleans
 
 - Shared skills installed from `stablyai/orca`:
