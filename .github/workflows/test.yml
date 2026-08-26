@@ -1,4 +1,4 @@
-name: Windows and macOS tests
+name: Windows, macOS, and Linux tests
 
 on:
   push:
@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-latest, ubuntu-latest]
         node: [18, 22]
     steps:
       - name: Checkout

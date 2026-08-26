@@ -3,10 +3,11 @@
 # 🐋 Orca Agent Cleanup
 
 **Orca 제거 후에도 AI 에이전트가 Orca CLI·Computer Use를 계속 호출하나요?**<br>
-Windows와 macOS에 남아 있는 Orca 스킬, 훅, CLI, 음성 모델과 앱 데이터를 찾아 복구 가능하게 격리합니다.
+Windows, macOS, Linux에 남아 있는 Orca 스킬, 훅, CLI, 음성 모델과 앱 데이터를 찾아 복구 가능하게 격리합니다.
 
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)](#-지원-운영체제)
 [![macOS](https://img.shields.io/badge/macOS-지원-000000?logo=apple&logoColor=white)](#-지원-운영체제)
+[![Linux](https://img.shields.io/badge/Linux-지원-FCC624?logo=linux&logoColor=black)](#-지원-운영체제)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![Tests](https://github.com/wilgon456/orca-agent-cleanup/actions/workflows/test.yml/badge.svg)](https://github.com/wilgon456/orca-agent-cleanup/actions/workflows/test.yml)
 [![License](https://img.shields.io/github/license/wilgon456/orca-agent-cleanup?color=2ea44f)](LICENSE)
@@ -34,22 +35,22 @@ Orca 앱을 제거해도 공용 스킬 폴더와 각 에이전트 설정에는 �
 
 ## ✅ 지원 범위 한눈에 보기
 
-| 정리 대상 | Windows | macOS | 기본 정리 |
-| --- | :---: | :---: | :---: |
-| Orca 공식 스킬 8종 | ✅ | ✅ | ✅ |
-| `computer-use`·`orca-cli`·`orchestration` | ✅ | ✅ | ✅ |
-| Claude·Codex·Gemini 등 Orca 관리형 훅 | ✅ | ✅ | ✅ |
-| `~/.orca`의 관리형 훅·암호화 음성 토큰 | ✅ | ✅ | ✅ |
-| Orca CLI 경로·런처 | ✅ | ✅ | ✅ |
-| Orca 앱 데이터와 기본 음성 모델 | ✅ | ✅ | `--include-app-data` |
-| 별도·사용자 지정 음성 모델 경로 | ✅ | ✅ | `--include-voice-data` |
+| 정리 대상 | Windows | macOS | Linux | 기본 정리 |
+| --- | :---: | :---: | :---: | :---: |
+| Orca 공식 스킬 8종 | ✅ | ✅ | ✅ | ✅ |
+| `computer-use`·`orca-cli`·`orchestration` | ✅ | ✅ | ✅ | ✅ |
+| Claude·Codex·Gemini 등 Orca 관리형 훅 | ✅ | ✅ | ✅ | ✅ |
+| `~/.orca`의 관리형 훅·암호화 음성 토큰 | ✅ | ✅ | ✅ | ✅ |
+| Orca CLI 경로·런처 | ✅ | ✅ | ✅ | ✅ |
+| Orca 앱 데이터와 기본 음성 모델 | ✅ | ✅ | ✅ | `--include-app-data` |
+| 별도·사용자 지정 음성 모델 경로 | ✅ | ✅ | ✅ | `--include-voice-data` |
 
 > [!TIP]
 > **Orca 전용 정리 도구입니다.** Claude, Codex, Gemini 자체와 OpenAI 공식 `computer-use`, Paseo 및 다른 공급자의 스킬은 제거하지 않습니다.
 
 ## 🚀 빠른 시작
 
-Node.js 18 이상이 필요합니다. Windows PowerShell, macOS Terminal에서 명령은 같습니다.
+Node.js 18 이상이 필요합니다. Windows PowerShell, macOS Terminal, Linux 셸에서 명령은 같습니다.
 
 ### 1. 저장소 받기
 
@@ -88,9 +89,10 @@ node scripts/orca-agent-cleanup.mjs clean --include-app-data --include-voice-dat
 | --- | --- |
 | Windows 10·11 | 공용·에이전트별 스킬, 관리형 훅, `%APPDATA%`·`%LOCALAPPDATA%`, `ProgramData`·`Public` 음성 캐시, 사용자 `PATH` |
 | macOS | 공용·에이전트별 스킬, 관리형 훅, `~/Library`의 Stably 앱 데이터·음성 캐시, `/usr/local/bin/orca`·`~/.local/bin/orca` |
+| Linux | 공용·에이전트별 스킬, 관리형 훅, `~/.config/Orca`·`~/.cache/Orca`, 사용자 홈의 `orca-ide`와 관리형 `orca` dispatcher |
 
 > [!NOTE]
-> Linux와 WSL은 현재 정식 테스트 대상이 아닙니다. macOS와 Windows용 경로를 Linux 환경에 그대로 적용하지 마세요.
+> Linux에서 `/usr/bin/orca`는 GNOME 스크린 리더입니다. 이 도구는 그 경로를 건드리지 않습니다. Orca CLI 공식 명령은 `orca-ide`입니다. WSL은 Linux 경로를 따르며, Windows 호스트 잔재는 Windows에서 따로 검사하세요.
 
 ## 🧹 무엇을 정리하나요?
 
@@ -111,11 +113,14 @@ Orca의 현재 공식 manifest에 등록된 다음 스킬을 검사합니다.
 ~/.codex/skills                 ~/.agents/skills
 ~/.claude/skills                ~/.grok/skills
 ~/.config/opencode/skills       ~/.pi/agent/skills
-~/.omp/agent/skills             ~/.gemini/skills
+~/.omp/agent/skills             ~/.hermes/skills
+~/.prime/agent/skills           ~/.gemini/skills
 ~/.gemini/antigravity/skills    ~/.cursor/skills
+~/.factory/skills               ~/.continue/skills
+~/.trae-cn/skills               ~/.augment/skills
 ```
 
-`--project`를 사용하면 프로젝트의 `.agents/skills`, `.claude/skills`도 검사합니다.
+`--project`를 사용하면 프로젝트의 `.agents`, `.claude`, `.factory`, `.continue`, `.trae`, `.grok`, `.augment` 스킬 폴더도 검사합니다.
 
 ```bash
 node scripts/orca-agent-cleanup.mjs scan --project /path/to/project
@@ -142,23 +147,24 @@ Amp / Droid / Command Code / Grok / Copilot / Hermes / Devin / Kimi
 
 - Windows 사용자 `PATH`의 공식 Orca CLI 경로
 - macOS에서 Orca 앱을 가리키는 `/usr/local/bin/orca`, `~/.local/bin/orca`
+- Linux의 `~/.local/bin/orca-ide`와 `# orca-serve-bare-orca-dispatcher` 표식이 있는 `~/.local/bin/orca`
 - `~/.orca/agent-hooks` 관리형 훅과 `openai-speech-token.enc` 음성 토큰
 - `~/.orca` 전체와 그 안의 worktree·사용자 파일은 보존
 
-macOS 런처는 심볼릭 링크 대상 또는 파일 내용이 `Orca.app`을 가리키는 경우에만 격리합니다. 같은 이름의 무관한 명령은 유지합니다.
+macOS 런처는 심볼릭 링크 대상 또는 파일 내용이 `Orca.app`을 가리키는 경우에만 격리합니다. Linux에서는 공식 `orca-ide` 런처와 Orca가 만든 dispatcher만 대상으로 하며, GNOME `orca`는 유지합니다.
 
 ### 앱 데이터와 음성
 
 `--include-app-data`로 다음 위치를 포함합니다.
 
-| Windows | macOS |
-| --- | --- |
-| `%APPDATA%\Orca` | `~/Library/Application Support/Orca` |
-| `%LOCALAPPDATA%\Orca` | `~/Library/Caches/com.stablyai.orca` |
-|  | `~/Library/Caches/com.stablyai.orca.ShipIt` |
-|  | `~/Library/HTTPStorages/com.stablyai.orca` |
-|  | `~/Library/Preferences/com.stablyai.orca.plist` |
-|  | `~/Library/Saved Application State/com.stablyai.orca.savedState` |
+| Windows | macOS | Linux |
+| --- | --- | --- |
+| `%APPDATA%\Orca` | `~/Library/Application Support/Orca` | `~/.config/Orca` |
+| `%LOCALAPPDATA%\Orca` | `~/Library/Caches/com.stablyai.orca` | `~/.cache/Orca` |
+|  | `~/Library/Caches/com.stablyai.orca.ShipIt` |  |
+|  | `~/Library/HTTPStorages/com.stablyai.orca` |  |
+|  | `~/Library/Preferences/com.stablyai.orca.plist` |  |
+|  | `~/Library/Saved Application State/com.stablyai.orca.savedState` |  |
 
 Orca의 기본 음성 모델은 앱 데이터의 `speech-models` 아래에 저장됩니다. Windows에서 비 ASCII 사용자 경로를 우회해 `ProgramData` 또는 `Public`에 만든 음성 캐시는 `--include-voice-data`로 함께 격리합니다.
 
@@ -190,6 +196,7 @@ PowerShell에서는 줄 연결 문자 대신 한 줄로 실행하거나 백틱(`
 | 에이전트 훅 | 명령이 정확히 `.orca/agent-hooks`를 참조하거나 Orca 관리 표식이 확인됨 |
 | 음성 캐시 | 경로 안에서 Orca 공식 음성 모델 ID가 확인됨 |
 | macOS CLI | 런처가 실제 `Orca.app/Contents/Resources/bin`을 가리킴 |
+| Linux CLI | `orca-ide`가 Orca 리소스 런처를 가리키거나 dispatcher에 공식 표식이 있음 |
 | Windows PATH | `%LOCALAPPDATA%\Programs\orca\resources\bin`과 정확히 일치함 |
 | 앱 데이터 | 운영체제별 공식 Orca 경로이며 사용자가 `--include-app-data`를 명시함 |
 
@@ -246,6 +253,8 @@ node scripts/orca-agent-cleanup.mjs --help
 - Orca 앱 본체 삭제
 - macOS 개인정보 보호 및 보안의 접근성·마이크·화면 기록 권한 변경
 - Windows 설치 관리자 항목 또는 레지스트리의 앱 제거 정보 삭제
+- GNOME 스크린 리더 `/usr/bin/orca` 삭제
+- Linux 패키지 관리자가 설치한 시스템 `orca-ide` 삭제
 - 출처를 확인할 수 없는 동명 스킬 삭제
 - `~/orca` 및 프로젝트 안의 사용자 워크스페이스·소스 코드 삭제
 - 과거 채팅·세션 기록에서 `orca`라는 문자열만 지우는 작업
@@ -254,6 +263,7 @@ Orca 앱이 아직 설치되어 있다면 먼저 정상 제거하세요.
 
 - Windows: **설정 → 앱 → 설치된 앱 → Orca → 제거**
 - macOS: Orca를 종료하고 **응용 프로그램**에서 `Orca.app`을 휴지통으로 이동
+- Linux: 배포판 패키지 또는 AppImage를 먼저 제거하세요. Arch는 `stably-orca-bin` 같은 AUR 패키지를 패키지 관리자로 지웁니다.
 
 macOS 권한은 필요하다면 **시스템 설정 → 개인정보 보호 및 보안**에서 Orca 항목을 직접 확인하세요.
 
@@ -266,11 +276,11 @@ Windows 전용 이전 인터페이스도 호환성을 위해 유지합니다.
 .\scripts\Remove-OrcaAgentIntegrations.ps1 -Apply -IncludeAppData -WhatIf
 ```
 
-새로운 스킬 8종, 여러 에이전트 훅, 음성 데이터, macOS까지 포함하려면 공통 Node.js 도구 사용을 권장합니다.
+새로운 스킬 8종, 여러 에이전트 훅, 음성 데이터, macOS·Linux까지 포함하려면 공통 Node.js 도구 사용을 권장합니다.
 
 ## 🧪 테스트
 
-테스트는 임시 사용자 폴더에 Windows와 macOS 환경을 각각 구성하며 실제 사용자 설정을 변경하지 않습니다.
+테스트는 임시 사용자 폴더에 Windows, macOS, Linux 환경을 각각 구성하며 실제 사용자 설정을 변경하지 않습니다.
 
 ```bash
 node --test tests/orca-agent-cleanup.test.mjs

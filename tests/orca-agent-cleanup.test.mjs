@@ -3,7 +3,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { buildContext, cleanOrcaResidue, OFFICIAL_ORCA_SKILLS, scanOrcaResidue } from '../scripts/orca-cleanup-core.mjs';
+import {
+  buildContext,
+  cleanOrcaResidue,
+  HOME_SKILL_ROOTS,
+  OFFICIAL_ORCA_SKILLS,
+  PROJECT_SKILL_ROOTS,
+  scanOrcaResidue,
+} from '../scripts/orca-cleanup-core.mjs';
 
 function makeSandbox(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `orca-cleanup-${name}-`));
@@ -264,4 +271,111 @@ test('macOS launcher 내용이 Orca를 가리키지 않으면 보존한다', () 
   assert(!scanOrcaResidue(context).some((item) => item.kind === 'cli'));
   cleanOrcaResidue(context, {});
   assert(exists(cli));
+});
+
+test('Orca 공식 스킬 발견 루트를 모두 포함한다', () => {
+  assert.deepEqual(HOME_SKILL_ROOTS, [
+    '.codex/skills',
+    '.agents/skills',
+    '.claude/skills',
+    '.grok/skills',
+    '.config/opencode/skills',
+    '.pi/agent/skills',
+    '.omp/agent/skills',
+    '.hermes/skills',
+    '.prime/agent/skills',
+    '.gemini/skills',
+    '.gemini/antigravity/skills',
+    '.cursor/skills',
+    '.factory/skills',
+    '.continue/skills',
+    '.trae-cn/skills',
+    '.augment/skills',
+  ]);
+  assert.deepEqual(PROJECT_SKILL_ROOTS, [
+    '.agents/skills',
+    '.claude/skills',
+    '.factory/skills',
+    '.continue/skills',
+    '.trae/skills',
+    '.grok/skills',
+    '.augment/skills',
+  ]);
+});
+
+test('새로 추가된 홈·프로젝트 스킬 루트의 공식 스킬을 격리한다', () => {
+  const root = makeSandbox('new-skill-roots');
+  const project = path.join(root, 'project');
+  const context = fakeContext(root, 'linux', { projects: [project], appDataCandidates: [], voiceCandidates: [] });
+  const hermesSkill = path.join(context.home, '.hermes', 'skills', 'orchestration', 'SKILL.md');
+  const factorySkill = path.join(project, '.factory', 'skills', 'orca-cli', 'SKILL.md');
+  write(hermesSkill, 'Use ORCA skills get orchestration\n');
+  write(factorySkill, 'github.com/stablyai/orca\n');
+  write(path.join(context.home, '.hermes', 'skills', 'unrelated', 'SKILL.md'), '# keep');
+
+  const skills = scanOrcaResidue(context).filter((item) => item.kind === 'skill');
+  assert.equal(skills.length, 2);
+  cleanOrcaResidue(context, {});
+  assert(!exists(path.dirname(hermesSkill)));
+  assert(!exists(path.dirname(factorySkill)));
+  assert(exists(path.join(context.home, '.hermes', 'skills', 'unrelated', 'SKILL.md')));
+});
+
+test('Linux orca-ide와 관리형 dispatcher만 격리하고 GNOME Orca는 보존한다', () => {
+  const root = makeSandbox('linux-cli');
+  const home = path.join(root, 'home');
+  const orcaIde = path.join(home, '.local', 'bin', 'orca-ide');
+  const dispatcher = path.join(home, '.local', 'bin', 'orca');
+  const gnomeOrca = path.join(root, 'usr', 'bin', 'orca');
+  const appData = path.join(home, '.config', 'Orca');
+  write(orcaIde, '#!/bin/sh\nexec /opt/Orca/resources/bin/orca-ide "$@"\n# stablyai/orca\n');
+  write(dispatcher, '#!/usr/bin/env bash\n# orca-serve-bare-orca-dispatcher\nexec orca-ide "$@"\n');
+  write(gnomeOrca, '#!/bin/sh\necho GNOME screen reader\n');
+  write(path.join(appData, 'orca-data.json'), '{}');
+
+  const context = buildContext({
+    platform: 'linux',
+    home,
+    backupRoot: path.join(root, 'backup'),
+    cliCandidates: [orcaIde, dispatcher, gnomeOrca],
+    appDataCandidates: [appData],
+    voiceCandidates: [],
+  });
+  const findings = scanOrcaResidue(context);
+  assert(findings.some((item) => item.path === orcaIde && item.kind === 'cli'));
+  assert(findings.some((item) => item.path === dispatcher && item.kind === 'cli'));
+  assert(!findings.some((item) => item.path === gnomeOrca));
+
+  const result = cleanOrcaResidue(context, { includeAppData: true });
+  assert.equal(result.errors.length, 0);
+  assert(!exists(orcaIde));
+  assert(!exists(dispatcher));
+  assert(exists(gnomeOrca));
+  assert(!exists(appData));
+});
+
+test('Linux orca-ide 심볼릭 링크가 공식 런처를 가리키면 격리한다', () => {
+  const root = makeSandbox('linux-cli-link');
+  const home = path.join(root, 'home');
+  const orcaIde = path.join(home, '.local', 'bin', 'orca-ide');
+  const launcher = path.join(root, 'opt', 'Orca', 'resources', 'bin', 'orca-ide');
+  write(launcher, '#!/bin/sh\n');
+  fs.mkdirSync(path.dirname(orcaIde), { recursive: true });
+  try {
+    fs.symlinkSync(launcher, orcaIde);
+  } catch {
+    return;
+  }
+  const context = buildContext({
+    platform: 'linux',
+    home,
+    backupRoot: path.join(root, 'backup'),
+    cliCandidates: [orcaIde],
+    appDataCandidates: [],
+    voiceCandidates: [],
+  });
+  const result = cleanOrcaResidue(context, {});
+  assert.equal(result.errors.length, 0);
+  assert(!exists(orcaIde));
+  assert(exists(launcher));
 });

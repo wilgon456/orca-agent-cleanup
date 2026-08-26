@@ -4,7 +4,7 @@ import process from 'node:process';
 import { buildContext, cleanOrcaResidue, OFFICIAL_ORCA_SKILLS, scanOrcaResidue } from './orca-cleanup-core.mjs';
 
 const HELP = `
-Orca Agent Cleanup — Windows/macOS 공통 정리 도구
+Orca Agent Cleanup — Windows·macOS·Linux 공통 정리 도구
 
 사용법:
   node scripts/orca-agent-cleanup.mjs scan [옵션]
@@ -18,7 +18,7 @@ Orca Agent Cleanup — Windows/macOS 공통 정리 도구
   --dry-run                    clean의 예정 작업만 표시합니다.
   --include-app-data           Orca 앱 데이터·캐시를 포함합니다.
   --include-voice-data         별도 음성 모델 캐시를 포함합니다.
-  --project <경로>             프로젝트 내부 .agents/.claude 스킬도 검사합니다(반복 가능).
+  --project <경로>             프로젝트 스킬 위치를 추가합니다(반복 가능).
   --voice-model-path <경로>    사용자 지정 음성 모델 경로를 포함합니다(반복 가능).
   --backup-root <경로>         격리·백업 폴더를 지정합니다.
   --json                       결과를 JSON으로 출력합니다.

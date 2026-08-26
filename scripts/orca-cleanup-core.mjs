@@ -14,6 +14,40 @@ export const OFFICIAL_ORCA_SKILLS = Object.freeze([
   'orchestration',
 ]);
 
+// Orca src/main/skills/skill-discovery-sources.ts 기준 사용자 홈 스킬 루트.
+export const HOME_SKILL_ROOTS = Object.freeze([
+  '.codex/skills',
+  '.agents/skills',
+  '.claude/skills',
+  '.grok/skills',
+  '.config/opencode/skills',
+  '.pi/agent/skills',
+  '.omp/agent/skills',
+  '.hermes/skills',
+  '.prime/agent/skills',
+  '.gemini/skills',
+  '.gemini/antigravity/skills',
+  '.cursor/skills',
+  '.factory/skills',
+  '.continue/skills',
+  '.trae-cn/skills',
+  '.augment/skills',
+]);
+
+// Orca가 프로젝트에서 추가로 검사하는 스킬 루트.
+export const PROJECT_SKILL_ROOTS = Object.freeze([
+  '.agents/skills',
+  '.claude/skills',
+  '.factory/skills',
+  '.continue/skills',
+  '.trae/skills',
+  '.grok/skills',
+  '.augment/skills',
+]);
+
+const LINUX_CLI_DISPATCHER_MARKER = '# orca-serve-bare-orca-dispatcher';
+const LINUX_CLI_COMMAND_NAME = 'orca-ide';
+
 const ORCA_SOURCE_PATTERN = /(?:^|[\s/:])stablyai\/orca(?:\.git)?(?:$|[\s/#?])/i;
 const ORCA_SKILL_SIGNATURES = [
   ORCA_SOURCE_PATTERN,
@@ -68,18 +102,11 @@ function readJson(target) {
 }
 
 function defaultHomeSkillRoots(home) {
-  return [
-    '.codex/skills',
-    '.agents/skills',
-    '.claude/skills',
-    '.grok/skills',
-    '.config/opencode/skills',
-    '.pi/agent/skills',
-    '.omp/agent/skills',
-    '.gemini/skills',
-    '.gemini/antigravity/skills',
-    '.cursor/skills',
-  ].map((relative) => path.join(home, ...relative.split('/')));
+  return HOME_SKILL_ROOTS.map((relative) => path.join(home, ...relative.split('/')));
+}
+
+function defaultProjectSkillRoots(projects) {
+  return projects.flatMap((project) => PROJECT_SKILL_ROOTS.map((relative) => path.join(project, ...relative.split('/'))));
 }
 
 function defaultHookCandidates(home, env) {
@@ -121,10 +148,14 @@ function defaultAppDataCandidates(platform, home, env) {
       env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Orca'),
     ].filter(Boolean);
   }
-  return [
+  const configHome = env.XDG_CONFIG_HOME || path.join(home, '.config');
+  const cacheHome = env.XDG_CACHE_HOME || path.join(home, '.cache');
+  return unique([
+    path.join(configHome, 'Orca'),
+    path.join(cacheHome, 'Orca'),
     path.join(home, '.config', 'Orca'),
     path.join(home, '.cache', 'Orca'),
-  ];
+  ]);
 }
 
 function defaultVoiceCandidates(platform, env) {
@@ -164,10 +195,7 @@ export function buildContext(overrides = {}) {
   const env = { ...process.env, ...(overrides.env || {}) };
   const projects = unique(overrides.projects || []);
   const homeSkillRoots = overrides.homeSkillRoots || defaultHomeSkillRoots(home);
-  const projectSkillRoots = projects.flatMap((project) => [
-    path.join(project, '.agents', 'skills'),
-    path.join(project, '.claude', 'skills'),
-  ]);
+  const projectSkillRoots = defaultProjectSkillRoots(projects);
   const lockFiles = overrides.lockFiles || unique([
     path.join(home, '.agents', '.skill-lock.json'),
     ...projects.map((project) => path.join(project, '.agents', '.skill-lock.json')),
@@ -190,9 +218,7 @@ export function buildContext(overrides = {}) {
     appDataCandidates: unique(overrides.appDataCandidates || defaultAppDataCandidates(platform, home, env)),
     voiceCandidates: unique([...(overrides.voiceCandidates || defaultVoiceCandidates(platform, env)), ...(overrides.customVoicePaths || [])]),
     customVoicePaths: unique(overrides.customVoicePaths || []),
-    cliCandidates: unique(overrides.cliCandidates || (platform === 'darwin'
-      ? ['/usr/local/bin/orca', path.join(home, '.local', 'bin', 'orca')]
-      : [])),
+    cliCandidates: unique(overrides.cliCandidates || defaultCliCandidates(platform, home)),
     userPath: overrides.userPath ?? readWindowsUserPath(platform),
     backupRoot: path.resolve(overrides.backupRoot || path.join(home, 'OrcaAgentCleanupBackups', timestamp())),
   };
@@ -241,19 +267,36 @@ function hasOrcaSkillSignature(skillPath) {
   return ORCA_SKILL_SIGNATURES.some((pattern) => pattern.test(text));
 }
 
+function defaultCliCandidates(platform, home) {
+  if (platform === 'darwin') {
+    return ['/usr/local/bin/orca', path.join(home, '.local', 'bin', 'orca')];
+  }
+  if (platform === 'linux') {
+    // Linux 공식 명령은 orca-ide다. /usr/bin/orca는 GNOME 스크린 리더라 건드리지 않는다.
+    return [
+      path.join(home, '.local', 'bin', LINUX_CLI_COMMAND_NAME),
+      path.join(home, '.local', 'bin', 'orca'),
+    ];
+  }
+  return [];
+}
+
 function isOrcaCli(candidate) {
   if (!pathExists(candidate)) return false;
+  let linkTarget = '';
   try {
     const stat = fs.lstatSync(candidate);
-    if (stat.isSymbolicLink()) {
-      const target = fs.readlinkSync(candidate);
-      return /Orca\.app[\\/]Contents[\\/]Resources[\\/]bin/i.test(target);
-    }
+    if (stat.isSymbolicLink()) linkTarget = fs.readlinkSync(candidate);
   } catch {
     return false;
   }
   const text = readText(candidate);
-  return /Orca\.app[\\/]Contents[\\/]Resources[\\/]bin|stablyai\/orca|Managed by Orca/i.test(text);
+  const haystack = `${linkTarget}\n${text}`;
+  if (/Orca\.app[\\/]Contents[\\/]Resources[\\/]bin/i.test(haystack)) return true;
+  if (haystack.includes(LINUX_CLI_DISPATCHER_MARKER)) return true;
+  if (/stablyai\/orca|Managed by Orca/i.test(haystack)) return true;
+  if (/[\\/]resources[\\/]bin[\\/]orca-ide(?:\.exe)?$/i.test(linkTarget)) return true;
+  return false;
 }
 
 function hasHookMarker(candidate) {
@@ -348,7 +391,7 @@ export function scanOrcaResidue(context) {
     }
   }
   for (const target of context.cliCandidates) {
-    if (isOrcaCli(target)) findings.push(finding('cli', target, 'Orca.app를 가리키는 CLI 런처'));
+    if (isOrcaCli(target)) findings.push(finding('cli', target, 'Orca 앱 또는 공식 런처를 가리키는 CLI'));
   }
   for (const entry of (context.userPath || '').split(';').filter(Boolean)) {
     if (isWindowsOrcaPathEntry(entry, context)) {
@@ -588,6 +631,9 @@ export function cleanOrcaResidue(context, options = {}) {
 export const internals = {
   KIMI_START,
   KIMI_END,
+  LINUX_CLI_DISPATCHER_MARKER,
+  LINUX_CLI_COMMAND_NAME,
   hasOrcaSkillSignature,
+  isOrcaCli,
   pruneJsonHooks,
 };
