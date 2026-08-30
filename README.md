@@ -44,6 +44,10 @@ Orca 앱을 제거해도 공용 스킬 폴더와 각 에이전트 설정에는 �
 | Orca CLI 경로·런처 | ✅ | ✅ | ✅ | ✅ |
 | Orca 앱 데이터와 기본 음성 모델 | ✅ | ✅ | ✅ | `--include-app-data` |
 | 별도·사용자 지정 음성 모델 경로 | ✅ | ✅ | ✅ | `--include-voice-data` |
+| WSL 릴레이·CLI·Skills | ✅ | — | — | `--include-wsl` |
+| SSH 릴레이·원격 세션 | ✅ | ✅ | ✅ | `--include-remote` |
+| `~/.orca` 전체 사용자 상태 | ✅ | ✅ | ✅ | `--include-user-state` |
+| 프로젝트 `.orca`·worktree 휴지통 | ✅ | ✅ | ✅ | `--include-project-state` |
 
 > [!TIP]
 > **Orca 전용 정리 도구입니다.** Claude, Codex, Gemini 자체와 OpenAI 공식 `computer-use`, Paseo 및 다른 공급자의 스킬은 제거하지 않습니다.
@@ -89,10 +93,10 @@ node scripts/orca-agent-cleanup.mjs clean --include-app-data --include-voice-dat
 | --- | --- |
 | Windows 10·11 | 공용·에이전트별 스킬, 관리형 훅, `%APPDATA%`·`%LOCALAPPDATA%`, `ProgramData`·`Public` 음성 캐시, 사용자 `PATH` |
 | macOS | 공용·에이전트별 스킬, 관리형 훅, `~/Library`의 Stably 앱 데이터·음성 캐시, `/usr/local/bin/orca`·`~/.local/bin/orca` |
-| Linux | 공용·에이전트별 스킬, 관리형 훅, `~/.config/Orca`·`~/.cache/Orca`, 사용자 홈의 `orca-ide`와 관리형 `orca` dispatcher |
+| Linux | 공용·에이전트별 스킬, 관리형 훅, `~/.config/Orca`·`~/.config/orca`, `~/.cache/Orca`·`~/.cache/orca-updater`, 사용자 홈의 `orca-ide`와 관리형 `orca` dispatcher |
 
 > [!NOTE]
-> Linux에서 `/usr/bin/orca`는 GNOME 스크린 리더입니다. 이 도구는 그 경로를 건드리지 않습니다. Orca CLI 공식 명령은 `orca-ide`입니다. WSL은 Linux 경로를 따르며, Windows 호스트 잔재는 Windows에서 따로 검사하세요.
+> Linux에서 `/usr/bin/orca`는 GNOME 스크린 리더입니다. 이 도구는 그 경로를 건드리지 않습니다. Orca CLI 공식 명령은 `orca-ide`입니다. Windows에서 `--include-wsl`을 사용하면 실행 중인 WSL 배포판의 Linux 경로도 함께 검사합니다.
 
 ## 🧹 무엇을 정리하나요?
 
@@ -120,11 +124,15 @@ Orca의 현재 공식 manifest에 등록된 다음 스킬을 검사합니다.
 ~/.trae-cn/skills               ~/.augment/skills
 ```
 
+`CLAUDE_CONFIG_DIR`, `GROK_HOME`, `HERMES_HOME`으로 이동된 Skills와 Windows의 `%LOCALAPPDATA%\hermes\skills`도 검사합니다. Skills 설치가 중단되어 남은 `.orca-skill-extract-*`, `.*.orca-staging-*`, `.*.orca-placement-*` 등 Orca 전용 트랜잭션 경로도 격리합니다.
+
 `--project`를 사용하면 프로젝트의 `.agents`, `.claude`, `.factory`, `.continue`, `.trae`, `.grok`, `.augment` 스킬 폴더도 검사합니다.
 
 ```bash
 node scripts/orca-agent-cleanup.mjs scan --project /path/to/project
 ```
+
+같은 프로젝트의 `.orca/issue-command`, `.orca/drops`와 인접 `.orca-worktree-trash`는 사용자 파일이 섞일 수 있어 `--include-project-state`를 함께 지정한 경우에만 격리합니다.
 
 동일한 이름만으로는 정리하지 않습니다. `stablyai/orca` 잠금 정보나 파일 내부의 Orca 고유 서명이 확인되어야 합니다. 따라서 OpenAI 공식 `computer-use`, Paseo, 다른 공급자의 동명 스킬은 대상이 아닙니다.
 
@@ -140,6 +148,9 @@ Amp / Droid / Command Code / Grok / Copilot / Hermes / Devin / Kimi
 - JSON 설정에서는 `.orca/agent-hooks` 등 Orca 명령이 들어간 훅만 제거합니다.
 - Kimi의 Orca 관리 블록만 제거합니다.
 - Amp·Hermes는 Orca 관리 표식이 확인된 플러그인만 격리합니다.
+- `CLAUDE_CONFIG_DIR`, `GROK_HOME`, `HERMES_HOME`, `KIMI_CODE_HOME`을 반영합니다.
+- `@orca-managed-pi-extension` 표식이 확인된 Pi·OMP·Prime 확장만 격리합니다.
+- Codex의 `orca-agent-status.config.toml`과 `BEGIN/END ORCA AGENT STATUS HOOKS` 레거시 블록을 정리합니다.
 - 권한, 모델, 타사 훅 등 나머지 설정은 보존합니다.
 - 수정 전 원본 설정을 백업합니다.
 
@@ -149,7 +160,7 @@ Amp / Droid / Command Code / Grok / Copilot / Hermes / Devin / Kimi
 - macOS에서 Orca 앱을 가리키는 `/usr/local/bin/orca`, `~/.local/bin/orca`
 - Linux의 `~/.local/bin/orca-ide`와 `# orca-serve-bare-orca-dispatcher` 표식이 있는 `~/.local/bin/orca`
 - `~/.orca/agent-hooks` 관리형 훅과 `openai-speech-token.enc` 음성 토큰
-- `~/.orca` 전체와 그 안의 worktree·사용자 파일은 보존
+- `~/.orca` 전체와 그 안의 자격증명·세션은 기본적으로 보존하며 `--include-user-state`에서만 함께 격리
 
 macOS 런처는 심볼릭 링크 대상 또는 파일 내용이 `Orca.app`을 가리키는 경우에만 격리합니다. Linux에서는 공식 `orca-ide` 런처와 Orca가 만든 dispatcher만 대상으로 하며, GNOME `orca`는 유지합니다.
 
@@ -161,7 +172,9 @@ macOS 런처는 심볼릭 링크 대상 또는 파일 내용이 `Orca.app`을 �
 | --- | --- | --- |
 | `%APPDATA%\Orca` | `~/Library/Application Support/Orca` | `~/.config/Orca` |
 | `%LOCALAPPDATA%\Orca` | `~/Library/Caches/com.stablyai.orca` | `~/.cache/Orca` |
-|  | `~/Library/Caches/com.stablyai.orca.ShipIt` |  |
+| `%LOCALAPPDATA%\orca-updater` | `~/Library/Application Support/orca` | `~/.config/orca` |
+|  | `~/Library/Caches/com.stablyai.orca.ShipIt` | `~/.cache/orca-updater` |
+|  | `~/Library/Caches/orca-updater` |  |
 |  | `~/Library/HTTPStorages/com.stablyai.orca` |  |
 |  | `~/Library/Preferences/com.stablyai.orca.plist` |  |
 |  | `~/Library/Saved Application State/com.stablyai.orca.savedState` |  |
@@ -177,6 +190,22 @@ node scripts/orca-agent-cleanup.mjs clean --dry-run \
 ```
 
 PowerShell에서는 줄 연결 문자 대신 한 줄로 실행하거나 백틱(``)을 사용하면 됩니다.
+
+### WSL·SSH·전체 사용자 상태
+
+실행 중인 WSL 배포판의 `~/.orca-wsl`, `~/.local/share/orca`, CLI, 훅과 Skills를 포함하려면 다음처럼 미리 확인합니다.
+
+```powershell
+node scripts/orca-agent-cleanup.mjs clean --dry-run --include-wsl
+```
+
+자동 발견되지 않는 WSL 홈은 `--wsl-home <경로>`로 추가할 수 있습니다. SSH에는 자동 로그인하지 않습니다. 원격 서버에서 이 도구를 직접 실행하거나 로컬에서 접근 가능한 원격 홈을 `--remote-home <경로>`로 지정한 뒤 `--include-remote`를 사용하세요.
+
+```bash
+node scripts/orca-agent-cleanup.mjs clean --dry-run --include-remote --remote-home /mnt/remote/home/user
+```
+
+`--include-user-state`는 `~/.orca` 전체를 하나의 복구 단위로 격리합니다. 자격증명, 세션, 키 바인딩과 사용자 작업물이 포함될 수 있으므로 완전 제거가 목적일 때만 사용하세요.
 
 ## 🛡️ 안전하게 동작하는 이유
 
@@ -199,6 +228,10 @@ PowerShell에서는 줄 연결 문자 대신 한 줄로 실행하거나 백틱(`
 | Linux CLI | `orca-ide`가 Orca 리소스 런처를 가리키거나 dispatcher에 공식 표식이 있음 |
 | Windows PATH | `%LOCALAPPDATA%\Programs\orca\resources\bin`과 정확히 일치함 |
 | 앱 데이터 | 운영체제별 공식 Orca 경로이며 사용자가 `--include-app-data`를 명시함 |
+| Pi 계열 확장 | 파일 내부에 `@orca-managed-pi-extension` 표식이 확인됨 |
+| WSL·SSH 상태 | Orca 고정 경로이며 각각 `--include-wsl`, `--include-remote`를 명시함 |
+| 전체 사용자 상태 | 경로가 정확히 `~/.orca`이고 `--include-user-state`를 명시함 |
+| 프로젝트 상태 | `--project`로 범위를 지정하고 `--include-project-state`를 명시함 |
 
 조건을 만족하지 않는 동명 항목은 `unverified`로 표시하고 자동 정리하지 않습니다. 사용자 홈, 파일시스템 루트 또는 정리 대상 안에 지정된 백업 폴더도 거부합니다.
 
@@ -209,8 +242,14 @@ PowerShell에서는 줄 연결 문자 대신 한 줄로 실행하거나 백틱(`
 ├── manifest.json       # 원래 경로, 작업 결과, 복구 위치
 ├── config-original/    # 수정 전 설정·PATH
 ├── skill/              # 격리한 스킬
+├── skill-transaction/  # 중단된 Skills 설치·삭제 트랜잭션
 ├── hook/               # 격리한 관리형 훅
+├── extension/          # Orca 관리형 Pi·OMP·Prime 확장
 ├── shared-state/       # ~/.orca 안의 확인된 훅·음성 토큰만
+├── user-state/         # 명시적으로 포함한 ~/.orca 전체
+├── wsl-state/          # 명시적으로 포함한 WSL 상태
+├── remote-state/       # 명시적으로 포함한 SSH 릴레이·세션 상태
+├── project-state/      # 명시적으로 포함한 프로젝트 Orca 상태
 ├── app-data/           # 앱 데이터
 ├── voice-data/         # 별도 음성 모델
 └── cli/                # CLI 런처
@@ -222,12 +261,20 @@ PowerShell에서는 줄 연결 문자 대신 한 줄로 실행하거나 백틱(`
 | --- | --- |
 | `scan` | 잔재를 검사하며 아무것도 변경하지 않습니다. |
 | `clean` | 확인된 기본 잔재를 백업 폴더로 격리합니다. |
+| `restore` | 정리 manifest를 기준으로 파일·설정·Windows PATH를 복원합니다. |
 | `--dry-run` | `clean` 예정 작업만 표시합니다. |
 | `--include-app-data` | Orca 앱 데이터와 그 안의 기본 음성 모델을 포함합니다. |
 | `--include-voice-data` | Windows의 별도 음성 캐시와 지정한 음성 경로를 포함합니다. |
+| `--include-user-state` | 자격증명·세션을 포함한 `~/.orca` 전체를 격리합니다. |
+| `--include-wsl` | 실행 중인 WSL 배포판의 Orca 상태를 포함합니다. |
+| `--wsl-home <경로>` | WSL 홈 경로를 직접 추가합니다. 반복 지정할 수 있습니다. |
+| `--include-remote` | SSH 릴레이·원격 세션 상태를 포함합니다. |
+| `--remote-home <경로>` | 접근 가능한 원격 홈을 추가합니다. 반복 지정할 수 있습니다. |
+| `--include-project-state` | 지정한 프로젝트의 `.orca`와 인접 worktree 휴지통을 포함합니다. |
 | `--project <경로>` | 프로젝트 스킬 위치를 추가합니다. 반복 지정할 수 있습니다. |
 | `--voice-model-path <경로>` | 사용자 지정 음성 모델 위치를 추가합니다. 반복 지정할 수 있습니다. |
 | `--backup-root <경로>` | 백업·격리 폴더를 직접 지정합니다. |
+| `--manifest <경로>` | `restore`에 사용할 `manifest.json`을 지정합니다. |
 | `--json` | 자동화에 사용할 JSON 결과를 출력합니다. |
 
 전체 도움말:
@@ -238,13 +285,25 @@ node scripts/orca-agent-cleanup.mjs --help
 
 ## ♻️ 복구 방법
 
-각 백업의 `manifest.json`에는 원래 경로와 백업 경로가 함께 기록됩니다.
+각 백업의 `manifest.json`에는 원래 경로와 백업 경로가 함께 기록됩니다. 복원 명령은 이 도구가 생성한 `manifestVersion: 1` 파일만 허용하며 SHA-256 무결성, 운영체제, `backupRoot`, 원래 경로와 백업 경로의 매핑을 검증합니다. 직접 작성하거나 수정한 manifest는 사용하지 마세요.
 
-1. Claude, Codex 등 관련 프로그램을 모두 종료합니다.
-2. `manifest.json`에서 복구할 항목의 `path`와 `backup`을 확인합니다.
-3. 격리된 파일·폴더를 `backup`에서 원래 `path`로 되돌립니다.
-4. 설정 파일은 `config-original`의 원본으로 교체합니다.
-5. 프로그램을 다시 실행합니다.
+먼저 Claude, Codex, Orca 등 관련 프로그램을 모두 종료하고 복원 예정 작업을 확인합니다.
+
+```bash
+node scripts/orca-agent-cleanup.mjs restore --dry-run \
+  --manifest ~/OrcaAgentCleanupBackups/<실행시각>/manifest.json
+```
+
+확인 후 실제로 복원합니다.
+
+```bash
+node scripts/orca-agent-cleanup.mjs restore \
+  --manifest ~/OrcaAgentCleanupBackups/<실행시각>/manifest.json
+```
+
+복원 위치에 정리 이후 생성·수정된 파일이 있으면 덮어쓰지 않습니다. 해당 항목을 같은 백업 폴더의 `restore-conflicts/<복원시각>/`에 먼저 보존한 뒤 정리 전 원본을 복원합니다. 복원 결과는 `restore-manifest-*.json`에 기록되며, 같은 manifest를 다시 실행해도 이미 복원된 동일 항목은 건너뜁니다.
+
+자동 복구를 사용할 수 없는 경우에는 `manifest.json`의 `path`와 `backup`을 확인해 수동으로 되돌릴 수 있습니다. 설정 원본은 `config-original/`에 있습니다.
 
 정상 동작을 충분히 확인한 후에만 백업 폴더를 직접 삭제하세요.
 
@@ -255,6 +314,11 @@ node scripts/orca-agent-cleanup.mjs --help
 - Windows 설치 관리자 항목 또는 레지스트리의 앱 제거 정보 삭제
 - GNOME 스크린 리더 `/usr/bin/orca` 삭제
 - Linux 패키지 관리자가 설치한 시스템 `orca-ide` 삭제
+- `/opt/orca`와 `/etc/systemd/system/orca-*.service` 같은 헤드리스 서버 시스템 설치물 삭제
+- SSH 호스트에 자동 로그인하거나 네트워크 너머의 경로를 추측하는 작업
+- 중지된 WSL 배포판을 자동으로 시작하는 작업
+- 개발 체크아웃 전용 `orca-dev` 실행 파일·데이터 삭제
+- Orca 소유권 표식이 없는 Codex trust 항목이나 설정 `.bak` 백업 삭제
 - 출처를 확인할 수 없는 동명 스킬 삭제
 - `~/orca` 및 프로젝트 안의 사용자 워크스페이스·소스 코드 삭제
 - 과거 채팅·세션 기록에서 `orca`라는 문자열만 지우는 작업
