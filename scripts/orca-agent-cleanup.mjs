@@ -9,8 +9,10 @@ import {
   scanOrcaResidue,
 } from './orca-cleanup-core.mjs';
 
+const VERSION = '1.2.0';
+
 const HELP = `
-Orca Agent Cleanup — Windows·macOS·Linux 공통 정리 도구
+Orca Agent Cleanup v${VERSION} — Windows·macOS·Linux 공통 정리 도구
 
 사용법:
   node scripts/orca-agent-cleanup.mjs scan [옵션]
@@ -37,6 +39,7 @@ Orca Agent Cleanup — Windows·macOS·Linux 공통 정리 도구
   --backup-root <경로>         격리·백업 폴더를 지정합니다.
   --manifest <경로>            restore에 사용할 manifest.json을 지정합니다.
   --json                       결과를 JSON으로 출력합니다.
+  -v, --version                버전을 표시합니다.
   -h, --help                   도움말을 표시합니다.
 
 예시:
@@ -64,6 +67,7 @@ function parseArgs(argv) {
     else if (arg === '--include-remote') result.includeRemote = true;
     else if (arg === '--include-project-state') result.includeProjectState = true;
     else if (arg === '--json') result.json = true;
+    else if (arg === '-v' || arg === '--version') result.version = true;
     else if (arg === '-h' || arg === '--help') result.help = true;
     else if (arg === '--project') result.projects.push(requireValue(arg, args));
     else if (arg === '--wsl-home') result.wslHomes.push(requireValue(arg, args));
@@ -146,7 +150,10 @@ function printRestore(result) {
 
 try {
   const options = parseArgs(process.argv.slice(2));
-  if (options.help) {
+  if (options.version) {
+    console.log(VERSION);
+    process.exit(0);
+  } else if (options.help) {
     console.log(HELP.trim());
     process.exit(0);
   }

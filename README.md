@@ -9,6 +9,7 @@ Windows, macOS, Linux에 남아 있는 Orca 스킬, 훅, CLI, 음성 모델과 �
 [![macOS](https://img.shields.io/badge/macOS-지원-000000?logo=apple&logoColor=white)](#-지원-운영체제)
 [![Linux](https://img.shields.io/badge/Linux-지원-FCC624?logo=linux&logoColor=black)](#-지원-운영체제)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Version](https://img.shields.io/badge/version-v1.2.0-2ea44f)](https://github.com/wilgon456/orca-agent-cleanup/releases)
 [![Tests](https://github.com/wilgon456/orca-agent-cleanup/actions/workflows/test.yml/badge.svg)](https://github.com/wilgon456/orca-agent-cleanup/actions/workflows/test.yml)
 [![License](https://img.shields.io/github/license/wilgon456/orca-agent-cleanup?color=2ea44f)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/wilgon456/orca-agent-cleanup?style=social)](https://github.com/wilgon456/orca-agent-cleanup/stargazers)
@@ -20,6 +21,18 @@ Windows, macOS, Linux에 남아 있는 Orca 스킬, 훅, CLI, 음성 모델과 �
 > [!IMPORTANT]
 > 이 저장소는 Orca 또는 Stably와 관계없는 커뮤니티 도구입니다.<br>
 > 먼저 Orca 앱을 정상 제거하고 Claude, Codex 등 관련 에이전트를 모두 종료한 뒤 사용하세요.
+
+## 🆕 v1.2.0
+
+- 정리 백업을 되돌리는 `restore` 명령을 추가했습니다.
+- SHA-256 무결성, 운영체제, 백업 루트와 파일 매핑을 검증해 변조되거나 잘못된 manifest의 복원을 차단합니다.
+- 복원 대상에 새 파일이 있으면 덮어쓰기 전에 `restore-conflicts`에 보존합니다.
+- WSL, SSH 원격 홈, 사용자 전체 상태와 프로젝트별 `.orca` 잔재까지 선택적으로 정리합니다.
+- macOS 대소문자 비구분 경로를 중복 처리하지 않도록 강화했습니다.
+- Windows, macOS, Ubuntu에서 Node.js 18·22 조합을 검증합니다.
+
+> [!NOTE]
+> 이 도구는 **Orca 앱 본체를 제거하지 않습니다.** 운영체제의 정상 제거 기능으로 Orca를 먼저 삭제한 뒤, 남은 스킬·훅·CLI·설정·캐시를 정리하는 도구입니다.
 
 ## ✨ 이런 문제를 해결합니다
 
