@@ -390,8 +390,8 @@ function timestamp() {
   return new Date().toISOString().replace(/[-:]/g, '').replace(/T/, '-').replace(/\..+/, '');
 }
 
-function operationId() {
-  return `${new Date().toISOString().replace(/[-:]/g, '').replace(/T/, '-').replace(/Z$/, '').replace('.', '-')}-${process.pid}-${randomUUID()}`;
+function operationId(now = new Date(), uuid = randomUUID()) {
+  return `${now.toISOString().replace(/[-:]/g, '').replace(/T/, '-').replace(/Z$/, '').replace('.', '-')}-${process.pid}-${uuid}`;
 }
 
 function cleanupManifestPayload(manifest) {
@@ -1180,6 +1180,7 @@ export const internals = {
   LINUX_CLI_COMMAND_NAME,
   hasOrcaSkillSignature,
   isOrcaCli,
+  operationId,
   pruneJsonHooks,
   signedCleanupManifest,
   stripDelimitedBlock,

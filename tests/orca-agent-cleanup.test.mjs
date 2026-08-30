@@ -59,6 +59,12 @@ test('공식 manifest의 8개 스킬 이름을 모두 포함한다', () => {
   ]);
 });
 
+test('같은 밀리초에 생성한 복원 작업 ID도 충돌하지 않는다', () => {
+  const now = new Date('2026-08-30T09:34:19.040Z');
+  const ids = Array.from({ length: 128 }, () => internals.operationId(now));
+  assert.equal(new Set(ids).size, ids.length);
+});
+
 test('Windows 잔재를 출처 기반으로 찾아 격리하고 타사 설정은 보존한다', () => {
   const root = makeSandbox('windows');
   const context = fakeContext(root, 'win32');
