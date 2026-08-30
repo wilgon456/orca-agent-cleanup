@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 export const OFFICIAL_ORCA_SKILLS = Object.freeze([
   'computer-use',
@@ -391,7 +391,7 @@ function timestamp() {
 }
 
 function operationId() {
-  return `${new Date().toISOString().replace(/[-:]/g, '').replace(/T/, '-').replace(/Z$/, '').replace('.', '-')}-${process.pid}`;
+  return `${new Date().toISOString().replace(/[-:]/g, '').replace(/T/, '-').replace(/Z$/, '').replace('.', '-')}-${process.pid}-${randomUUID()}`;
 }
 
 function cleanupManifestPayload(manifest) {
