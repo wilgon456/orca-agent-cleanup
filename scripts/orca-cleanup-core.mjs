@@ -242,23 +242,23 @@ function pluginCacheOrcaSkills(root) {
       resolved = fs.realpathSync.native(directory);
       if (!isSameOrDescendant(resolvedRoot, resolved) || visited.has(resolved)) return;
       visited.add(resolved);
-      entries = fs.readdirSync(resolved, { withFileTypes: true });
+      entries = fs.readdirSync(directory, { withFileTypes: true });
     } catch {
       return;
     }
     entriesSeen += entries.length;
     if (entriesSeen > PLUGIN_CACHE_MAX_ENTRIES) return;
 
-    if (path.basename(resolved) === 'skills') {
+    if (path.basename(directory) === 'skills') {
       for (const name of OFFICIAL_ORCA_SKILLS) {
-        const candidate = path.join(resolved, name);
+        const candidate = path.join(directory, name);
         if (pathExists(candidate) && hasOrcaSkillSignature(candidate)) candidates.push(candidate);
         if (candidates.length >= PLUGIN_CACHE_MAX_CANDIDATES) return;
       }
     }
     for (const entry of entries) {
       if (entry.name === 'node_modules' || entry.isSymbolicLink() || !entry.isDirectory()) continue;
-      visit(path.join(resolved, entry.name), depth + 1);
+      visit(path.join(directory, entry.name), depth + 1);
     }
   }
 
