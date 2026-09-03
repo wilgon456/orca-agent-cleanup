@@ -12,6 +12,7 @@ import {
   PROJECT_SKILL_ROOTS,
   restoreOrcaBackup,
   scanOrcaResidue,
+  verifyOrcaBackup,
 } from '../scripts/orca-cleanup-core.mjs';
 
 function makeSandbox(name) {
@@ -241,6 +242,21 @@ test('백업 폴더가 정리 대상 내부면 작업을 거부한다', () => {
   const result = cleanOrcaResidue(context, {});
   assert.equal(result.errors.length, 1);
   assert(exists(path.join(hooks, 'hook.cmd')));
+  assert(!exists(context.backupRoot));
+});
+
+test('비어 있지 않은 백업 폴더는 원본과 기존 백업을 건드리지 않고 거부한다', () => {
+  const root = makeSandbox('occupied-backup');
+  const context = fakeContext(root, 'linux', { appDataCandidates: [], voiceCandidates: [] });
+  const skill = path.join(context.home, '.agents', 'skills', 'orca-cli');
+  write(path.join(skill, 'SKILL.md'), 'github.com/stablyai/orca\n');
+  write(path.join(context.backupRoot, 'keep.txt'), 'existing backup');
+
+  const result = cleanOrcaResidue(context, {});
+  assert.equal(result.errors.length, 1);
+  assert(exists(skill));
+  assert.equal(fs.readFileSync(path.join(context.backupRoot, 'keep.txt'), 'utf8'), 'existing backup');
+  assert(!exists(path.join(context.backupRoot, 'manifest.json')));
 });
 
 test('macOS 앱 데이터와 검증된 CLI 런처를 격리한다', () => {
@@ -478,6 +494,39 @@ test('Linux 소문자 앱 데이터와 updater 캐시는 include-app-data에서�
   assert(!exists(updater));
 });
 
+test('Linux AppImage 추출 캐시는 include-app-data에서만 격리한다', () => {
+  const root = makeSandbox('linux-appimage-cache');
+  const context = fakeContext(root, 'linux');
+  const appImageCache = path.join(context.home, '.cache', 'orca', 'appimage');
+  write(path.join(appImageCache, 'launcher', 'orca-ide'), '# orca-appimage-stable-launcher\n');
+
+  const finding = scanOrcaResidue(context).find((item) => item.path === appImageCache);
+  assert(finding);
+  assert.equal(finding.requires, 'includeAppData');
+  cleanOrcaResidue(context, {});
+  assert(exists(appImageCache));
+  cleanOrcaResidue(context, { includeAppData: true });
+  assert(!exists(appImageCache));
+});
+
+test('Codex 플러그인 캐시에서는 서명된 Orca 스킬만 격리한다', () => {
+  const root = makeSandbox('codex-plugin-cache');
+  const context = fakeContext(root, 'linux', { appDataCandidates: [], voiceCandidates: [] });
+  const pluginCache = path.join(context.home, '.codex', 'plugins', 'cache');
+  context.pluginCacheRoots = [pluginCache];
+  const orcaSkill = path.join(pluginCache, 'stablyai', 'orca', '1.0.0', 'skills', 'orca-cli');
+  const unrelated = path.join(pluginCache, 'example', 'plugin', '1.0.0', 'skills', 'computer-use');
+  write(path.join(orcaSkill, 'SKILL.md'), 'Use `ORCA skills get orca-cli` for the current guide.\n');
+  write(path.join(unrelated, 'SKILL.md'), 'Generic computer automation skill.\n');
+
+  const findings = scanOrcaResidue(context);
+  assert(findings.some((item) => item.path === orcaSkill && item.kind === 'skill'));
+  assert(!findings.some((item) => item.path === unrelated));
+  cleanOrcaResidue(context, {});
+  assert(!exists(orcaSkill));
+  assert(exists(unrelated));
+});
+
 test('사용자 지정 에이전트 홈의 Skills와 Kimi·Hermes 훅을 정리한다', () => {
   const root = makeSandbox('custom-agent-homes');
   const home = path.join(root, 'home');
@@ -566,6 +615,7 @@ test('전체 사용자 상태는 명시적 옵션에서만 하나의 복구 단�
   const preview = cleanOrcaResidue(context, { dryRun: true, includeUserState: true });
   assert(preview.actions.some((item) => item.path === state && item.action === 'would-quarantine'));
   assert(preview.actions.some((item) => item.kind === 'remote-state' && item.action === 'covered'));
+  context.backupRoot = path.join(root, 'backup-full-state');
   cleanOrcaResidue(context, { includeUserState: true });
   assert(!exists(state));
 });
@@ -636,6 +686,11 @@ test('restore는 격리 파일과 수정 전 설정을 manifest 기준으로 복
   const cleaned = cleanOrcaResidue(context, {});
   assert.equal(cleaned.errors.length, 0);
   const manifest = path.join(context.backupRoot, 'manifest.json');
+  const manifestValue = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+  assert.equal(manifestValue.manifestVersion, 2);
+  assert.equal(manifestValue.cleanupStatus, 'complete');
+  assert(manifestValue.actions.filter((item) => ['quarantined', 'edited'].includes(item.action))
+    .every((item) => item.backupIntegrity?.algorithm === 'sha256'));
   assert(!exists(skill));
   assert.deepEqual(JSON.parse(fs.readFileSync(settings, 'utf8')), { model: 'keep' });
 
@@ -652,6 +707,60 @@ test('restore는 격리 파일과 수정 전 설정을 manifest 기준으로 복
   const second = restoreOrcaBackup(manifest, { home: context.home, platform: context.platform });
   assert.equal(second.errors.length, 0);
   assert(second.actions.every((item) => item.action === 'already-restored'));
+});
+
+test('verify는 백업 내용 변경을 감지하고 restore가 손상 백업을 거부한다', () => {
+  const root = makeSandbox('verify-integrity');
+  const context = fakeContext(root, 'linux', { appDataCandidates: [], voiceCandidates: [] });
+  const skill = path.join(context.home, '.agents', 'skills', 'orca-cli');
+  write(path.join(skill, 'SKILL.md'), 'github.com/stablyai/orca\noriginal\n');
+  cleanOrcaResidue(context, {});
+  const manifestPath = path.join(context.backupRoot, 'manifest.json');
+  const verified = verifyOrcaBackup(manifestPath, { platform: 'linux' });
+  assert.equal(verified.valid, true);
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const backup = manifest.actions.find((item) => item.path === skill).backup;
+  write(path.join(backup, 'SKILL.md'), 'tampered backup\n');
+
+  const invalid = verifyOrcaBackup(manifestPath, { platform: 'linux' });
+  assert.equal(invalid.valid, false);
+  const restored = restoreOrcaBackup(manifestPath, { home: context.home, platform: 'linux' });
+  assert.equal(restored.errors.length, 1);
+  assert(!exists(skill));
+});
+
+test('중단 상태의 pending quarantine도 manifest로 안전하게 복구한다', () => {
+  const root = makeSandbox('pending-recovery');
+  const context = fakeContext(root, 'linux', { appDataCandidates: [], voiceCandidates: [] });
+  const skill = path.join(context.home, '.agents', 'skills', 'orca-cli');
+  write(path.join(skill, 'SKILL.md'), 'github.com/stablyai/orca\nrecover me\n');
+  cleanOrcaResidue(context, {});
+  const manifestPath = path.join(context.backupRoot, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  manifest.cleanupStatus = 'in-progress';
+  manifest.actions = manifest.actions.map((item) => item.path === skill
+    ? { ...item, action: 'pending-quarantine', backupIntegrity: undefined }
+    : item);
+  writeJson(manifestPath, internals.signedCleanupManifest({
+    manifestVersion: manifest.manifestVersion,
+    createdAt: manifest.createdAt,
+    platform: manifest.platform,
+    backupRoot: manifest.backupRoot,
+    cleanupStatus: manifest.cleanupStatus,
+    actions: manifest.actions,
+    errors: manifest.errors,
+  }));
+
+  const restored = restoreOrcaBackup(manifestPath, { home: context.home, platform: 'linux' });
+  assert.equal(restored.errors.length, 0);
+  assert.match(fs.readFileSync(path.join(skill, 'SKILL.md'), 'utf8'), /recover me/);
+});
+
+test('기본 백업 경로는 같은 초에 만들어도 서로 다르다', () => {
+  const root = makeSandbox('unique-backup-root');
+  const first = buildContext({ platform: 'linux', home: path.join(root, 'home'), env: {} });
+  const second = buildContext({ platform: 'linux', home: path.join(root, 'home'), env: {} });
+  assert.notEqual(first.backupRoot, second.backupRoot);
 });
 
 test('restore는 복원 위치의 새 파일을 충돌 백업으로 보존한다', () => {

@@ -1,0 +1,12 @@
+{
+  "repository": "stablyai/orca",
+  "verifiedRelease": "v1.4.196",
+  "verifiedAt": "2026-09-03",
+  "files": {
+    "resources/skills/current-manifest.json": "c8b204f00c501884eabcdcefc01a2d2001779fdd",
+    "src/main/skills/skill-discovery-sources.ts": "9d9781c36879df259c4fe48e8c4c0a921e10f947",
+    "src/main/skills/skill-delete/staging-names.ts": "dab684dd4a62681c65f10a9cc0c5cb18328fda2f",
+    "src/main/cli/appimage-extracted-root.ts": "36d3a8b549311c159d9afde8a80638b44dac3532",
+    "src/main/speech/model-cache-path.ts": "82dd286f1dd8b81ecfb3719c6684757828806e8e"
+  }
+}

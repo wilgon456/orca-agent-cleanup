@@ -49,6 +49,9 @@ export const PROJECT_SKILL_ROOTS = Object.freeze([
 const LINUX_CLI_DISPATCHER_MARKER = '# orca-serve-bare-orca-dispatcher';
 const LINUX_CLI_COMMAND_NAME = 'orca-ide';
 const PI_EXTENSION_MARKER = '@orca-managed-pi-extension';
+const PLUGIN_CACHE_MAX_DEPTH = 9;
+const PLUGIN_CACHE_MAX_ENTRIES = 16_384;
+const PLUGIN_CACHE_MAX_CANDIDATES = 64;
 const CODEX_LEGACY_START = '# BEGIN ORCA AGENT STATUS HOOKS';
 const CODEX_LEGACY_END = '# END ORCA AGENT STATUS HOOKS';
 
@@ -207,12 +210,60 @@ function defaultAppDataCandidates(platform, home, env) {
     path.join(configHome, 'Orca'),
     path.join(configHome, 'orca'),
     path.join(cacheHome, 'Orca'),
+    path.join(cacheHome, 'orca', 'appimage'),
     path.join(cacheHome, 'orca-updater'),
     path.join(home, '.config', 'Orca'),
     path.join(home, '.config', 'orca'),
     path.join(home, '.cache', 'Orca'),
+    path.join(home, '.cache', 'orca', 'appimage'),
     path.join(home, '.cache', 'orca-updater'),
   ]);
+}
+
+function pluginCacheOrcaSkills(root) {
+  if (!pathExists(root)) return [];
+  let resolvedRoot;
+  try {
+    resolvedRoot = fs.realpathSync.native(root);
+  } catch {
+    return [];
+  }
+  const candidates = [];
+  const visited = new Set();
+  let entriesSeen = 0;
+
+  function visit(directory, depth) {
+    if (depth > PLUGIN_CACHE_MAX_DEPTH
+        || entriesSeen >= PLUGIN_CACHE_MAX_ENTRIES
+        || candidates.length >= PLUGIN_CACHE_MAX_CANDIDATES) return;
+    let resolved;
+    let entries;
+    try {
+      resolved = fs.realpathSync.native(directory);
+      if (!isSameOrDescendant(resolvedRoot, resolved) || visited.has(resolved)) return;
+      visited.add(resolved);
+      entries = fs.readdirSync(resolved, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entriesSeen += entries.length;
+    if (entriesSeen > PLUGIN_CACHE_MAX_ENTRIES) return;
+
+    if (path.basename(resolved) === 'skills') {
+      for (const name of OFFICIAL_ORCA_SKILLS) {
+        const candidate = path.join(resolved, name);
+        if (pathExists(candidate) && hasOrcaSkillSignature(candidate)) candidates.push(candidate);
+        if (candidates.length >= PLUGIN_CACHE_MAX_CANDIDATES) return;
+      }
+    }
+    for (const entry of entries) {
+      if (entry.name === 'node_modules' || entry.isSymbolicLink() || !entry.isDirectory()) continue;
+      visit(path.join(resolved, entry.name), depth + 1);
+    }
+  }
+
+  visit(resolvedRoot, 0);
+  return unique(candidates);
 }
 
 function defaultVoiceCandidates(platform, env) {
@@ -338,6 +389,7 @@ export function buildContext(overrides = {}) {
     wslHomes,
     remoteHomes,
     skillRoots: unique([...homeSkillRoots, ...projectSkillRoots, ...scopedSkillRoots.map((item) => item.root)]),
+    pluginCacheRoots: unique(overrides.pluginCacheRoots || [path.join(home, '.codex', 'plugins', 'cache')]),
     skillRootRequirements,
     lockFiles,
     lockFileRequirements,
@@ -387,7 +439,8 @@ export function buildContext(overrides = {}) {
 }
 
 function timestamp() {
-  return new Date().toISOString().replace(/[-:]/g, '').replace(/T/, '-').replace(/\..+/, '');
+  const time = new Date().toISOString().replace(/[-:]/g, '').replace(/T/, '-').replace(/\..+/, '');
+  return `${time}-${randomUUID()}`;
 }
 
 function operationId(now = new Date(), uuid = randomUUID()) {
@@ -400,6 +453,7 @@ function cleanupManifestPayload(manifest) {
     createdAt: manifest.createdAt,
     platform: manifest.platform,
     backupRoot: manifest.backupRoot,
+    cleanupStatus: manifest.cleanupStatus,
     actions: manifest.actions,
     errors: manifest.errors,
   };
@@ -414,6 +468,57 @@ function signedCleanupManifest(value) {
     ...value,
     integrity: { algorithm: 'sha256', digest: cleanupManifestDigest(value) },
   };
+}
+
+function updateDigestField(hash, value) {
+  const bytes = Buffer.from(String(value), 'utf8');
+  hash.update(`${bytes.length}:`);
+  hash.update(bytes);
+}
+
+function updateDigestForPath(hash, target, relative = '.') {
+  const stat = fs.lstatSync(target);
+  if (stat.isSymbolicLink()) {
+    updateDigestField(hash, 'link');
+    updateDigestField(hash, relative);
+    updateDigestField(hash, fs.readlinkSync(target));
+    return;
+  }
+  if (stat.isDirectory()) {
+    updateDigestField(hash, 'directory');
+    updateDigestField(hash, relative);
+    for (const name of fs.readdirSync(target).sort()) {
+      updateDigestForPath(hash, path.join(target, name), path.join(relative, name));
+    }
+    return;
+  }
+  if (!stat.isFile()) throw new Error(`지원하지 않는 백업 파일 형식입니다: ${target}`);
+  updateDigestField(hash, 'file');
+  updateDigestField(hash, relative);
+  updateDigestField(hash, stat.size);
+  const handle = fs.openSync(target, 'r');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    for (;;) {
+      const bytesRead = fs.readSync(handle, buffer, 0, buffer.length, null);
+      if (bytesRead === 0) break;
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+  } finally {
+    fs.closeSync(handle);
+  }
+}
+
+function pathIntegrity(target) {
+  const hash = createHash('sha256');
+  updateDigestForPath(hash, target);
+  return { algorithm: 'sha256', digest: hash.digest('hex') };
+}
+
+function integrityMatches(target, integrity) {
+  return integrity?.algorithm === 'sha256'
+    && /^[a-f0-9]{64}$/u.test(integrity.digest || '')
+    && pathIntegrity(target).digest === integrity.digest;
 }
 
 function entriesFromLock(lock) {
@@ -582,6 +687,12 @@ export function scanOrcaResidue(context) {
     }
     for (const target of managedSkillTransactionResidues(root)) {
       findings.push(finding('skill-transaction', target, '중단된 Orca Skills 설치·삭제 트랜잭션', requirement));
+    }
+  }
+
+  for (const root of context.pluginCacheRoots || []) {
+    for (const skillPath of pluginCacheOrcaSkills(root)) {
+      findings.push(finding('skill', skillPath, 'Codex 플러그인 캐시의 Orca 공식 스킬 출처 확인'));
     }
   }
 
@@ -757,9 +868,13 @@ function pruneJsonHooks(value) {
 }
 
 function writeAtomic(target, text) {
-  const temp = `${target}.orca-cleanup-${process.pid}.tmp`;
-  fs.writeFileSync(temp, text, 'utf8');
-  fs.renameSync(temp, target);
+  const temp = `${target}.orca-cleanup-${process.pid}-${randomUUID()}.tmp`;
+  fs.writeFileSync(temp, text, { encoding: 'utf8', flag: 'wx' });
+  try {
+    fs.renameSync(temp, target);
+  } finally {
+    try { fs.unlinkSync(temp); } catch { /* rename 성공 시 이미 사라진다. */ }
+  }
 }
 
 function cleanJsonHook(target, context, dryRun) {
@@ -852,11 +967,72 @@ function selected(finding, options) {
   return !finding.requires || Boolean(options[finding.requires]);
 }
 
+function plannedMutationForFinding(item) {
+  if (item.kind === 'skill-lock' || item.kind === 'path-entry') return 'edit';
+  if (item.kind !== 'hook') return 'quarantine';
+  if (item.hookType === 'json' || item.hookType === 'kimi' || item.hookType === 'hermes-config') return 'edit';
+  if (item.hookType === 'codex-legacy' && !item.removeWhole) return 'edit';
+  return 'quarantine';
+}
+
+function plannedBackupForFinding(item, context, mutation) {
+  if (mutation === 'edit') {
+    return item.kind === 'path-entry'
+      ? path.join(context.backupRoot, 'config-original', 'windows-user-path.txt')
+      : path.join(context.backupRoot, 'config-original', safeRelative(item.path));
+  }
+  const category = item.kind.replace(/[^a-z0-9-]/gi, '-');
+  return path.join(context.backupRoot, category, safeRelative(item.path));
+}
+
+function cleanupJournalValue(context, createdAt, cleanupStatus, actions, errors) {
+  return signedCleanupManifest({
+    manifestVersion: 2,
+    createdAt,
+    platform: context.platform,
+    backupRoot: context.backupRoot,
+    cleanupStatus,
+    actions,
+    errors,
+  });
+}
+
+function initializeCleanupJournal(context, createdAt, actions, errors) {
+  if (pathExists(context.backupRoot) && fs.readdirSync(context.backupRoot).length > 0) {
+    throw new Error(`비어 있지 않은 백업 폴더는 사용할 수 없습니다: ${context.backupRoot}`);
+  }
+  fs.mkdirSync(context.backupRoot, { recursive: true });
+  const manifestPath = path.join(context.backupRoot, 'manifest.json');
+  const manifest = cleanupJournalValue(context, createdAt, 'in-progress', actions, errors);
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+  return manifestPath;
+}
+
+function updateCleanupJournal(manifestPath, context, createdAt, cleanupStatus, actions, errors) {
+  const manifest = cleanupJournalValue(context, createdAt, cleanupStatus, actions, errors);
+  writeAtomic(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
 export function cleanOrcaResidue(context, options = {}) {
   const dryRun = Boolean(options.dryRun);
   const findings = scanOrcaResidue(context);
   const actions = [];
   const errors = [];
+  const createdAt = new Date().toISOString();
+  const hasSelectedWork = findings.some((item) => selected(item, options));
+  let manifestPath = null;
+  if (!dryRun && hasSelectedWork) {
+    try {
+      for (const item of findings.filter((candidate) => selected(candidate, options))) {
+        if (plannedMutationForFinding(item) === 'quarantine') assertSafeQuarantineSource(item.path, context);
+      }
+      manifestPath = initializeCleanupJournal(context, createdAt, actions, errors);
+    } catch (error) {
+      errors.push({ path: context.backupRoot, message: error.message });
+      actions.push({ action: 'error', path: context.backupRoot, error: error.message });
+      return { findings, actions, errors, backupRoot: context.backupRoot, dryRun };
+    }
+  }
 
   const selectedUserStateRoots = findings
     .filter((item) => item.kind === 'user-state' && selected(item, options))
@@ -866,54 +1042,64 @@ export function cleanOrcaResidue(context, options = {}) {
     if (item.kind !== 'user-state'
         && selectedUserStateRoots.some((root) => isSameOrDescendant(root, item.path))) {
       actions.push({ action: 'covered', ...item });
+      if (manifestPath) updateCleanupJournal(manifestPath, context, createdAt, 'in-progress', actions, errors);
       continue;
     }
     if (!selected(item, options)) {
       actions.push({ action: 'skipped', ...item });
+      if (manifestPath) updateCleanupJournal(manifestPath, context, createdAt, 'in-progress', actions, errors);
       continue;
     }
+    let pendingIndex = -1;
+    if (manifestPath) {
+      const mutation = plannedMutationForFinding(item);
+      const pending = {
+        action: mutation === 'edit' ? 'pending-edit' : 'pending-quarantine',
+        backup: plannedBackupForFinding(item, context, mutation),
+        ...item,
+      };
+      pendingIndex = actions.push(pending) - 1;
+      updateCleanupJournal(manifestPath, context, createdAt, 'in-progress', actions, errors);
+    }
     try {
+      let action;
       if (item.kind === 'hook' && item.hookType === 'json') {
         const backup = cleanJsonHook(item.path, context, dryRun);
-        actions.push({ action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item });
+        action = { action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item };
       } else if (item.kind === 'hook' && item.hookType === 'kimi') {
         const backup = cleanKimiHook(item.path, context, dryRun);
-        actions.push({ action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item });
+        action = { action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item };
       } else if (item.kind === 'hook' && item.hookType === 'codex-legacy' && !item.removeWhole) {
         const backup = cleanCodexLegacyHook(item.path, context, dryRun);
-        actions.push({ action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item });
+        action = { action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item };
       } else if (item.kind === 'hook' && item.hookType === 'hermes-config') {
         const backup = cleanHermesConfig(item.path, context, dryRun);
-        actions.push({ action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item });
+        action = { action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item };
       } else if (item.kind === 'skill-lock') {
         const backup = removeLockEntries(item.path, item.names, context, dryRun);
-        actions.push({ action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item });
+        action = { action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item };
       } else if (item.kind === 'path-entry') {
         const backup = cleanWindowsUserPath(context, dryRun);
-        actions.push({ action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item });
+        action = { action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item };
       } else {
         const category = item.kind.replace(/[^a-z0-9-]/gi, '-');
         const backup = quarantine(item.path, context, category, dryRun);
-        actions.push({ action: dryRun ? 'would-quarantine' : 'quarantined', backup, ...item });
+        action = { action: dryRun ? 'would-quarantine' : 'quarantined', backup, ...item };
       }
+      if (!dryRun && ['edited', 'quarantined'].includes(action.action)) {
+        action.backupIntegrity = pathIntegrity(action.backup);
+      }
+      if (pendingIndex >= 0) actions[pendingIndex] = action;
+      else actions.push(action);
     } catch (error) {
       errors.push({ path: item.path, message: error.message });
-      actions.push({ action: 'error', error: error.message, ...item });
+      if (pendingIndex >= 0) actions[pendingIndex] = { ...actions[pendingIndex], error: error.message };
+      else actions.push({ action: 'error', error: error.message, ...item });
     }
+    if (manifestPath) updateCleanupJournal(manifestPath, context, createdAt, 'in-progress', actions, errors);
   }
 
-  if (!dryRun && actions.some((item) => ['edited', 'quarantined'].includes(item.action))) {
-    fs.mkdirSync(context.backupRoot, { recursive: true });
-    const manifest = signedCleanupManifest({
-      manifestVersion: 1,
-      createdAt: new Date().toISOString(),
-      platform: context.platform,
-      backupRoot: context.backupRoot,
-      actions,
-      errors,
-    });
-    fs.writeFileSync(path.join(context.backupRoot, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-  }
+  if (manifestPath) updateCleanupJournal(manifestPath, context, createdAt, 'complete', actions, errors);
   return { findings, actions, errors, backupRoot: context.backupRoot, dryRun };
 }
 
@@ -952,16 +1138,26 @@ function sameManifestPath(left, right, platform) {
 }
 
 function expectedBackupForRestoreItem(item, backupRoot) {
-  if (item.action === 'quarantined' && QUARANTINED_RESTORE_KINDS.has(item.kind)) {
+  const sourceAction = item.action === 'pending-quarantine'
+    ? 'quarantined'
+    : item.action === 'pending-edit' ? 'edited' : item.action;
+  if (sourceAction === 'quarantined' && QUARANTINED_RESTORE_KINDS.has(item.kind)) {
     const category = item.kind.replace(/[^a-z0-9-]/gi, '-');
     return path.join(backupRoot, category, safeRelative(item.path));
   }
-  if (item.action === 'edited' && EDITED_RESTORE_KINDS.has(item.kind)) {
+  if (sourceAction === 'edited' && EDITED_RESTORE_KINDS.has(item.kind)) {
     return item.kind === 'path-entry'
       ? path.join(backupRoot, 'config-original', 'windows-user-path.txt')
       : path.join(backupRoot, 'config-original', safeRelative(item.path));
   }
   throw new Error(`지원하지 않는 복원 작업입니다: ${item.action}/${item.kind}`);
+}
+
+function assertBackupContentIntegrity(item, backup, manifestVersion) {
+  if (manifestVersion < 2 || item.action.startsWith('pending-')) return;
+  if (!integrityMatches(backup, item.backupIntegrity)) {
+    throw new Error(`백업 내용 무결성 검증에 실패했습니다: ${backup}`);
+  }
 }
 
 function assertExpectedBackupForItem(item, state) {
@@ -974,7 +1170,7 @@ function assertExpectedBackupForItem(item, state) {
 }
 
 function validateCleanupManifest(manifest, resolvedManifest, platform) {
-  if (manifest.manifestVersion !== 1) {
+  if (![1, 2].includes(manifest.manifestVersion)) {
     throw new Error(`지원하지 않는 manifest 버전입니다: ${manifest.manifestVersion ?? '(없음)'}`);
   }
   if (!['win32', 'darwin', 'linux'].includes(manifest.platform) || manifest.platform !== platform) {
@@ -987,11 +1183,61 @@ function validateCleanupManifest(manifest, resolvedManifest, platform) {
   if (!Array.isArray(manifest.actions) || !Array.isArray(manifest.errors)) {
     throw new Error('manifest의 actions 또는 errors 형식이 올바르지 않습니다.');
   }
+  if (manifest.manifestVersion === 2 && !['in-progress', 'complete'].includes(manifest.cleanupStatus)) {
+    throw new Error(`manifest 정리 상태가 올바르지 않습니다: ${manifest.cleanupStatus ?? '(없음)'}`);
+  }
   if (manifest.integrity?.algorithm !== 'sha256'
       || manifest.integrity.digest !== cleanupManifestDigest(manifest)) {
     throw new Error('manifest 무결성 검증에 실패했습니다. 파일이 수정되었을 수 있습니다.');
   }
   return backupRoot;
+}
+
+export function verifyOrcaBackup(manifestPath, options = {}) {
+  const resolvedManifest = path.resolve(manifestPath);
+  const manifest = readJson(resolvedManifest);
+  if (!manifest) throw new Error(`유효한 Orca 정리 manifest가 아닙니다: ${resolvedManifest}`);
+  const platform = options.platform || process.platform;
+  const backupRoot = validateCleanupManifest(manifest, resolvedManifest, platform);
+  const actions = [];
+  const errors = [];
+  const restorable = manifest.actions.filter((item) => [
+    'quarantined', 'edited', 'pending-quarantine', 'pending-edit',
+  ].includes(item.action));
+
+  for (const item of restorable) {
+    try {
+      const backup = assertExpectedBackupForItem(item, { backupRoot, platform });
+      if (!pathExists(backup)) {
+        if (item.action.startsWith('pending-') && pathExists(item.path)) {
+          actions.push({ path: item.path, backup, status: 'not-applied' });
+          continue;
+        }
+        throw new Error(`백업 항목이 없습니다: ${backup}`);
+      }
+      if (!item.backupIntegrity) {
+        actions.push({ path: item.path, backup, status: item.action.startsWith('pending-')
+          ? 'recoverable-unverified' : 'not-recorded' });
+        continue;
+      }
+      if (!integrityMatches(backup, item.backupIntegrity)) {
+        throw new Error(`백업 내용 무결성 검증에 실패했습니다: ${backup}`);
+      }
+      actions.push({ path: item.path, backup, status: 'verified' });
+    } catch (error) {
+      errors.push({ path: item.path, message: error.message });
+      actions.push({ path: item.path, backup: item.backup, status: 'error', error: error.message });
+    }
+  }
+  return {
+    manifestPath: resolvedManifest,
+    manifestVersion: manifest.manifestVersion,
+    cleanupStatus: manifest.cleanupStatus || 'legacy-complete',
+    backupRoot,
+    actions,
+    errors,
+    valid: errors.length === 0,
+  };
 }
 
 function copyForRestore(source, destination) {
@@ -1069,7 +1315,11 @@ function setWindowsUserPath(value) {
 
 function restoreWindowsPathEntry(item, state) {
   const backup = assertExpectedBackupForItem(item, state);
-  if (!pathExists(backup)) throw new Error(`PATH 백업이 없습니다: ${backup}`);
+  if (!pathExists(backup)) {
+    if (item.action === 'pending-edit') return { action: 'already-restored', conflictBackup: null };
+    throw new Error(`PATH 백업이 없습니다: ${backup}`);
+  }
+  assertBackupContentIntegrity(item, backup, state.manifestVersion);
   const original = readText(backup).replace(/\r?\n$/, '');
   const current = state.readUserPath();
   if (current === original) return { action: 'already-restored', conflictBackup: null };
@@ -1093,6 +1343,7 @@ function restoreFilesystemItem(item, state) {
     if (pathExists(target)) return { action: 'already-restored', conflictBackup: null };
     throw new Error(`복원할 백업이 없습니다: ${source}`);
   }
+  assertBackupContentIntegrity(item, source, state.manifestVersion);
   if (pathExists(target) && pathsEquivalent(source, target)) {
     return { action: 'already-restored', conflictBackup: null };
   }
@@ -1131,12 +1382,15 @@ export function restoreOrcaBackup(manifestPath, options = {}) {
     dryRun,
     home: path.resolve(options.home || os.homedir()),
     platform,
+    manifestVersion: manifest.manifestVersion,
     readUserPath: options.readUserPath || (() => readWindowsUserPath('win32')),
     writeUserPath: options.writeUserPath || setWindowsUserPath,
   };
   const actions = [];
   const errors = [];
-  const restorable = manifest.actions.filter((item) => ['quarantined', 'edited'].includes(item.action));
+  const restorable = manifest.actions.filter((item) => [
+    'quarantined', 'edited', 'pending-quarantine', 'pending-edit',
+  ].includes(item.action));
 
   for (const item of restorable) {
     const base = {
@@ -1168,7 +1422,17 @@ export function restoreOrcaBackup(manifestPath, options = {}) {
       errors,
     }, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
   }
-  return { manifestPath: resolvedManifest, backupRoot, conflictRoot, reportPath, actions, errors, dryRun };
+  return {
+    manifestPath: resolvedManifest,
+    manifestVersion: manifest.manifestVersion,
+    cleanupStatus: manifest.cleanupStatus || 'legacy-complete',
+    backupRoot,
+    conflictRoot,
+    reportPath,
+    actions,
+    errors,
+    dryRun,
+  };
 }
 
 export const internals = {

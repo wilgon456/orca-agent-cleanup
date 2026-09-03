@@ -12,16 +12,17 @@ jobs:
   test:
     name: ${{ matrix.os }} / Node.js ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
-        node: [18, 22]
+        node: [18, 22, 24]
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ matrix.node }}
       - name: Run cross-platform tests
@@ -30,9 +31,10 @@ jobs:
   windows-powershell:
     name: Windows PowerShell compatibility
     runs-on: windows-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Run legacy smoke test
         shell: powershell
         run: .\tests\Invoke-SmokeTest.ps1

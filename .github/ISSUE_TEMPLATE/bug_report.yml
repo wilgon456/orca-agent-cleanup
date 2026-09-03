@@ -1,0 +1,41 @@
+name: 버그 신고
+description: 잘못된 탐지, 정리 또는 복원 문제를 신고합니다.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 자격증명, 토큰, 사용자 이름이 포함된 경로는 반드시 가린 뒤 첨부해 주세요.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 운영체제
+      options: [Windows, macOS, Linux, WSL]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Orca Agent Cleanup 버전
+      placeholder: "node scripts/orca-agent-cleanup.mjs --version"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: 실행한 명령과 결과
+      description: 가능하면 먼저 동일 옵션의 --dry-run 또는 --json 결과를 첨부하세요.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대한 결과
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 실제 결과
+    validations:
+      required: true

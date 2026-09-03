@@ -1,0 +1,36 @@
+name: Orca upstream drift
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Compare upstream contracts
+        id: drift
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/check-orca-upstream.mjs
+      - name: Open review issue
+        if: steps.drift.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Orca upstream contract drift detected"
+          count=$(gh issue list --state open --search "$title in:title" --json number --jq length)
+          if [ "$count" = "0" ]; then
+            gh issue create \
+              --title "$title" \
+              --body "Orca의 스킬·CLI·캐시 계약 파일이 기준선 이후 변경됐습니다. 자동 삭제 범위를 넓히기 전에 공식 소스와 .github/orca-upstream-baseline.json을 검토하세요. 실행: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi

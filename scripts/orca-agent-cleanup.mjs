@@ -7,9 +7,10 @@ import {
   OFFICIAL_ORCA_SKILLS,
   restoreOrcaBackup,
   scanOrcaResidue,
+  verifyOrcaBackup,
 } from './orca-cleanup-core.mjs';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 
 const HELP = `
 Orca Agent Cleanup v${VERSION} — Windows·macOS·Linux 공통 정리 도구
@@ -18,11 +19,13 @@ Orca Agent Cleanup v${VERSION} — Windows·macOS·Linux 공통 정리 도구
   node scripts/orca-agent-cleanup.mjs scan [옵션]
   node scripts/orca-agent-cleanup.mjs clean [옵션]
   node scripts/orca-agent-cleanup.mjs restore --manifest <manifest.json> [옵션]
+  node scripts/orca-agent-cleanup.mjs verify --manifest <manifest.json> [옵션]
 
 명령:
   scan                         잔재를 검사합니다(기본 명령, 변경 없음).
   clean                        확인된 잔재를 백업 폴더로 격리합니다.
   restore                      manifest에 기록된 파일과 설정을 복원합니다.
+  verify                       manifest와 백업 내용의 무결성을 검사합니다.
 
 옵션:
   --dry-run                    clean의 예정 작업만 표시합니다.
@@ -37,7 +40,7 @@ Orca Agent Cleanup v${VERSION} — Windows·macOS·Linux 공통 정리 도구
   --project <경로>             프로젝트 스킬 위치를 추가합니다(반복 가능).
   --voice-model-path <경로>    사용자 지정 음성 모델 경로를 포함합니다(반복 가능).
   --backup-root <경로>         격리·백업 폴더를 지정합니다.
-  --manifest <경로>            restore에 사용할 manifest.json을 지정합니다.
+  --manifest <경로>            restore·verify에 사용할 manifest.json을 지정합니다.
   --json                       결과를 JSON으로 출력합니다.
   -v, --version                버전을 표시합니다.
   -h, --help                   도움말을 표시합니다.
@@ -77,9 +80,9 @@ function parseArgs(argv) {
     else if (arg === '--manifest') result.manifestPath = requireValue(arg, args);
     else throw new Error(`알 수 없는 옵션입니다: ${arg}`);
   }
-  if (!['scan', 'clean', 'restore'].includes(result.command)) throw new Error(`알 수 없는 명령입니다: ${result.command}`);
-  if (result.command === 'restore' && !result.manifestPath && !result.help) {
-    throw new Error('restore에는 --manifest <경로>가 필요합니다.');
+  if (!['scan', 'clean', 'restore', 'verify'].includes(result.command)) throw new Error(`알 수 없는 명령입니다: ${result.command}`);
+  if (['restore', 'verify'].includes(result.command) && !result.manifestPath && !result.help && !result.version) {
+    throw new Error(`${result.command}에는 --manifest <경로>가 필요합니다.`);
   }
   return result;
 }
@@ -122,6 +125,7 @@ function printClean(result) {
     quarantined: '✅ 격리', edited: '✅ 수정', 'would-quarantine': '🔎 격리 예정',
     'would-edit': '🔎 수정 예정', skipped: '⏭️ 옵션 제외', covered: '↳ 상위 상태에 포함',
     unchanged: '➖ 변경 없음', error: '❌ 오류',
+    'pending-quarantine': '⚠️ 격리 상태 확인 필요', 'pending-edit': '⚠️ 수정 상태 확인 필요',
   };
   for (const item of result.actions) console.log(`${labels[item.action] || item.action}  ${item.path}`);
   if (!result.dryRun && result.actions.some((item) => ['quarantined', 'edited'].includes(item.action))) {
@@ -132,6 +136,9 @@ function printClean(result) {
 
 function printRestore(result) {
   console.log(`\nOrca Agent Cleanup ${result.dryRun ? '복원 미리보기' : '복원 결과'}\n`);
+  if (result.cleanupStatus === 'in-progress') {
+    console.log('⚠️ 중단된 정리 journal을 복구합니다. 해시 기록 전 중단된 항목은 백업 존재 여부로 판정합니다.\n');
+  }
   if (!result.actions.length) {
     console.log('✅ manifest에 복원할 완료 작업이 없습니다.');
     return;
@@ -148,6 +155,16 @@ function printRestore(result) {
   if (result.errors.length) console.log(`\n⚠️ ${result.errors.length}개 항목은 복원하지 못했습니다.`);
 }
 
+function printVerify(result) {
+  console.log('\nOrca Agent Cleanup 백업 검증 결과\n');
+  const labels = {
+    verified: '✅ 검증됨', 'not-recorded': 'ℹ️ v1 해시 없음',
+    'not-applied': '➖ 미적용', 'recoverable-unverified': '⚠️ 중단 작업', error: '❌ 오류',
+  };
+  for (const item of result.actions) console.log(`${labels[item.status] || item.status}  ${item.backup || item.path}`);
+  console.log(result.valid ? '\n✅ manifest와 백업을 사용할 수 있습니다.' : `\n❌ ${result.errors.length}개 오류가 있습니다.`);
+}
+
 try {
   const options = parseArgs(process.argv.slice(2));
   if (options.version) {
@@ -157,7 +174,12 @@ try {
     console.log(HELP.trim());
     process.exit(0);
   }
-  if (options.command === 'restore') {
+  if (options.command === 'verify') {
+    const result = verifyOrcaBackup(options.manifestPath, options);
+    if (options.json) console.log(JSON.stringify(result, null, 2));
+    else printVerify(result);
+    if (!result.valid) process.exitCode = 2;
+  } else if (options.command === 'restore') {
     const result = restoreOrcaBackup(options.manifestPath, options);
     if (options.json) console.log(JSON.stringify(result, null, 2));
     else printRestore(result);

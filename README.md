@@ -9,7 +9,7 @@ Windows, macOS, Linux에 남아 있는 Orca 스킬, 훅, CLI, 음성 모델과 �
 [![macOS](https://img.shields.io/badge/macOS-지원-000000?logo=apple&logoColor=white)](#-지원-운영체제)
 [![Linux](https://img.shields.io/badge/Linux-지원-FCC624?logo=linux&logoColor=black)](#-지원-운영체제)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![Version](https://img.shields.io/badge/version-v1.2.0-2ea44f)](https://github.com/wilgon456/orca-agent-cleanup/releases)
+[![Version](https://img.shields.io/badge/version-v1.3.0-2ea44f)](https://github.com/wilgon456/orca-agent-cleanup/releases)
 [![Tests](https://github.com/wilgon456/orca-agent-cleanup/actions/workflows/test.yml/badge.svg)](https://github.com/wilgon456/orca-agent-cleanup/actions/workflows/test.yml)
 [![License](https://img.shields.io/github/license/wilgon456/orca-agent-cleanup?color=2ea44f)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/wilgon456/orca-agent-cleanup?style=social)](https://github.com/wilgon456/orca-agent-cleanup/stargazers)
@@ -22,14 +22,14 @@ Windows, macOS, Linux에 남아 있는 Orca 스킬, 훅, CLI, 음성 모델과 �
 > 이 저장소는 Orca 또는 Stably와 관계없는 커뮤니티 도구입니다.<br>
 > 먼저 Orca 앱을 정상 제거하고 Claude, Codex 등 관련 에이전트를 모두 종료한 뒤 사용하세요.
 
-## 🆕 v1.2.0
+## 🆕 v1.3.0
 
-- 정리 백업을 되돌리는 `restore` 명령을 추가했습니다.
-- SHA-256 무결성, 운영체제, 백업 루트와 파일 매핑을 검증해 변조되거나 잘못된 manifest의 복원을 차단합니다.
-- 복원 대상에 새 파일이 있으면 덮어쓰기 전에 `restore-conflicts`에 보존합니다.
-- WSL, SSH 원격 홈, 사용자 전체 상태와 프로젝트별 `.orca` 잔재까지 선택적으로 정리합니다.
-- macOS 대소문자 비구분 경로를 중복 처리하지 않도록 강화했습니다.
-- Windows, macOS, Ubuntu에서 Node.js 18·22 조합을 검증합니다.
+- Linux AppImage가 만드는 `~/.cache/orca/appimage`와 서명이 확인된 Codex 플러그인 캐시의 Orca 스킬을 탐지합니다.
+- 정리 전에 manifest v2 journal을 만들고 각 작업 전후 상태를 기록해 중단된 정리도 `restore`로 복구할 수 있습니다.
+- 백업 파일과 디렉터리 내용의 SHA-256을 기록하며 `verify` 명령으로 복원 전에 손상을 확인합니다.
+- 기본 백업 경로에 UUID를 사용하고 비어 있지 않은 사용자 지정 백업 폴더는 거부합니다.
+- 공식 Orca 스킬·설치·캐시 계약의 변경을 매일 확인하고 차이가 생기면 Issue를 생성합니다.
+- GitHub Actions를 커밋 SHA로 고정하고 CodeQL 및 Node.js 24 검증을 추가했습니다.
 
 > [!NOTE]
 > 이 도구는 **Orca 앱 본체를 제거하지 않습니다.** 운영체제의 정상 제거 기능으로 Orca를 먼저 삭제한 뒤, 남은 스킬·훅·CLI·설정·캐시를 정리하는 도구입니다.
@@ -51,6 +51,7 @@ Orca 앱을 제거해도 공용 스킬 폴더와 각 에이전트 설정에는 �
 | 정리 대상 | Windows | macOS | Linux | 기본 정리 |
 | --- | :---: | :---: | :---: | :---: |
 | Orca 공식 스킬 8종 | ✅ | ✅ | ✅ | ✅ |
+| Codex 플러그인 캐시의 서명된 Orca 스킬 | ✅ | ✅ | ✅ | ✅ |
 | `computer-use`·`orca-cli`·`orchestration` | ✅ | ✅ | ✅ | ✅ |
 | Claude·Codex·Gemini 등 Orca 관리형 훅 | ✅ | ✅ | ✅ | ✅ |
 | `~/.orca`의 관리형 훅·암호화 음성 토큰 | ✅ | ✅ | ✅ | ✅ |
@@ -98,6 +99,13 @@ node scripts/orca-agent-cleanup.mjs clean --dry-run --include-app-data --include
 node scripts/orca-agent-cleanup.mjs clean --include-app-data --include-voice-data
 ```
 
+### 5. 백업 무결성 확인
+
+```bash
+node scripts/orca-agent-cleanup.mjs verify \
+  --manifest ~/OrcaAgentCleanupBackups/<실행시각-UUID>/manifest.json
+```
+
 정리가 끝나면 Claude, Codex와 터미널을 완전히 종료한 뒤 다시 실행하세요. 기존 세션이 스킬 목록이나 환경 변수를 캐시하고 있을 수 있습니다.
 
 ## 🖥️ 지원 운영체제
@@ -106,7 +114,7 @@ node scripts/orca-agent-cleanup.mjs clean --include-app-data --include-voice-dat
 | --- | --- |
 | Windows 10·11 | 공용·에이전트별 스킬, 관리형 훅, `%APPDATA%`·`%LOCALAPPDATA%`, `ProgramData`·`Public` 음성 캐시, 사용자 `PATH` |
 | macOS | 공용·에이전트별 스킬, 관리형 훅, `~/Library`의 Stably 앱 데이터·음성 캐시, `/usr/local/bin/orca`·`~/.local/bin/orca` |
-| Linux | 공용·에이전트별 스킬, 관리형 훅, `~/.config/Orca`·`~/.config/orca`, `~/.cache/Orca`·`~/.cache/orca-updater`, 사용자 홈의 `orca-ide`와 관리형 `orca` dispatcher |
+| Linux | 공용·에이전트별 스킬, 관리형 훅, `~/.config/Orca`·`~/.config/orca`, `~/.cache/Orca`·`~/.cache/orca/appimage`·`~/.cache/orca-updater`, 사용자 홈의 `orca-ide`와 관리형 `orca` dispatcher |
 
 > [!NOTE]
 > Linux에서 `/usr/bin/orca`는 GNOME 스크린 리더입니다. 이 도구는 그 경로를 건드리지 않습니다. Orca CLI 공식 명령은 `orca-ide`입니다. Windows에서 `--include-wsl`을 사용하면 실행 중인 WSL 배포판의 Linux 경로도 함께 검사합니다.
@@ -187,7 +195,7 @@ macOS 런처는 심볼릭 링크 대상 또는 파일 내용이 `Orca.app`을 �
 | `%LOCALAPPDATA%\Orca` | `~/Library/Caches/com.stablyai.orca` | `~/.cache/Orca` |
 | `%LOCALAPPDATA%\orca-updater` | `~/Library/Application Support/orca` | `~/.config/orca` |
 |  | `~/Library/Caches/com.stablyai.orca.ShipIt` | `~/.cache/orca-updater` |
-|  | `~/Library/Caches/orca-updater` |  |
+|  | `~/Library/Caches/orca-updater` | `~/.cache/orca/appimage` |
 |  | `~/Library/HTTPStorages/com.stablyai.orca` |  |
 |  | `~/Library/Preferences/com.stablyai.orca.plist` |  |
 |  | `~/Library/Saved Application State/com.stablyai.orca.savedState` |  |
@@ -228,12 +236,15 @@ node scripts/orca-agent-cleanup.mjs clean --dry-run --include-remote --remote-ho
 4. **설정 전체를 덮어쓰지 않습니다.** 확인된 Orca 훅만 제거하고 원본을 백업합니다.
 5. **미리보기를 제공합니다.** `clean --dry-run`으로 실제 작업 전에 확인할 수 있습니다.
 6. **반복 실행할 수 있습니다.** 이미 정리된 환경에서는 추가 변경 없이 끝납니다.
+7. **작업 전 journal을 기록합니다.** 정리 중 프로세스가 중단돼도 완료·대기 작업을 manifest에서 판별합니다.
+8. **백업 내용도 검증합니다.** manifest v2는 파일과 디렉터리의 SHA-256을 기록하며 손상된 백업은 복원하지 않습니다.
 
 ### 자동 정리 승인 조건
 
 | 항목 | 자동 정리되는 조건 |
 | --- | --- |
 | 스킬 | 공식 이름 8종이면서 해당 스킬 폴더의 `stablyai/orca` 잠금 출처 또는 Orca 고유 문구가 확인됨 |
+| Codex 플러그인 캐시 | 깊이·항목 수를 제한해 탐색하고 `skills/<공식 이름>/SKILL.md`의 Orca 서명이 확인됨 |
 | 프로젝트 스킬 | `--project`로 지정한 해당 프로젝트의 잠금 파일과 스킬 폴더가 서로 일치함 |
 | 에이전트 훅 | 명령이 정확히 `.orca/agent-hooks`를 참조하거나 Orca 관리 표식이 확인됨 |
 | 음성 캐시 | 경로 안에서 Orca 공식 음성 모델 ID가 확인됨 |
@@ -251,8 +262,8 @@ node scripts/orca-agent-cleanup.mjs clean --dry-run --include-remote --remote-ho
 기본 백업 위치:
 
 ```text
-~/OrcaAgentCleanupBackups/<실행 시각>/
-├── manifest.json       # 원래 경로, 작업 결과, 복구 위치
+~/OrcaAgentCleanupBackups/<실행 시각-UUID>/
+├── manifest.json       # 작업 전부터 원자적으로 갱신하는 복구 journal
 ├── config-original/    # 수정 전 설정·PATH
 ├── skill/              # 격리한 스킬
 ├── skill-transaction/  # 중단된 Skills 설치·삭제 트랜잭션
@@ -275,6 +286,7 @@ node scripts/orca-agent-cleanup.mjs clean --dry-run --include-remote --remote-ho
 | `scan` | 잔재를 검사하며 아무것도 변경하지 않습니다. |
 | `clean` | 확인된 기본 잔재를 백업 폴더로 격리합니다. |
 | `restore` | 정리 manifest를 기준으로 파일·설정·Windows PATH를 복원합니다. |
+| `verify` | manifest와 백업 파일·디렉터리의 SHA-256 무결성을 검사합니다. |
 | `--dry-run` | `clean` 예정 작업만 표시합니다. |
 | `--include-app-data` | Orca 앱 데이터와 그 안의 기본 음성 모델을 포함합니다. |
 | `--include-voice-data` | Windows의 별도 음성 캐시와 지정한 음성 경로를 포함합니다. |
@@ -287,7 +299,7 @@ node scripts/orca-agent-cleanup.mjs clean --dry-run --include-remote --remote-ho
 | `--project <경로>` | 프로젝트 스킬 위치를 추가합니다. 반복 지정할 수 있습니다. |
 | `--voice-model-path <경로>` | 사용자 지정 음성 모델 위치를 추가합니다. 반복 지정할 수 있습니다. |
 | `--backup-root <경로>` | 백업·격리 폴더를 직접 지정합니다. |
-| `--manifest <경로>` | `restore`에 사용할 `manifest.json`을 지정합니다. |
+| `--manifest <경로>` | `restore` 또는 `verify`에 사용할 `manifest.json`을 지정합니다. |
 | `--json` | 자동화에 사용할 JSON 결과를 출력합니다. |
 
 전체 도움말:
@@ -298,7 +310,16 @@ node scripts/orca-agent-cleanup.mjs --help
 
 ## ♻️ 복구 방법
 
-각 백업의 `manifest.json`에는 원래 경로와 백업 경로가 함께 기록됩니다. 복원 명령은 이 도구가 생성한 `manifestVersion: 1` 파일만 허용하며 SHA-256 무결성, 운영체제, `backupRoot`, 원래 경로와 백업 경로의 매핑을 검증합니다. 직접 작성하거나 수정한 manifest는 사용하지 마세요.
+각 백업의 `manifest.json`에는 원래 경로와 백업 경로가 함께 기록됩니다. v1.3부터 사용하는 `manifestVersion: 2`는 정리 시작 전에 생성되고 각 작업 전후에 원자적으로 갱신됩니다. 기존 v1 manifest도 계속 복원할 수 있습니다.
+
+복원 전에 manifest, 경로 매핑과 백업 내용의 SHA-256을 검사할 수 있습니다. v1 백업은 당시 내용 해시를 기록하지 않았으므로 경로와 manifest만 검증합니다.
+
+```bash
+node scripts/orca-agent-cleanup.mjs verify \
+  --manifest ~/OrcaAgentCleanupBackups/<실행시각-UUID>/manifest.json
+```
+
+manifest v2의 `cleanupStatus`가 `in-progress`라면 정리 도중 중단된 상태입니다. `restore --dry-run`으로 먼저 확인하면 백업까지 이동된 대기 작업은 복원하고, 아직 실행되지 않은 작업은 건너뜁니다.
 
 먼저 Claude, Codex, Orca 등 관련 프로그램을 모두 종료하고 복원 예정 작업을 확인합니다.
 
@@ -363,11 +384,15 @@ Windows 전용 이전 인터페이스도 호환성을 위해 유지합니다.
 node --test tests/orca-agent-cleanup.test.mjs
 ```
 
+GitHub Actions에서는 Windows, macOS, Ubuntu의 Node.js 18·22·24 조합과 Windows PowerShell 호환성을 검사합니다. CodeQL은 JavaScript 경로 처리와 데이터 흐름을 별도로 분석합니다. 공식 Orca 계약 파일은 매일 감시하며 변경 시 검토 Issue를 자동 생성합니다.
+
 Windows 전용 기존 도구의 회귀 테스트:
 
 ```powershell
 .\tests\Invoke-SmokeTest.ps1
 ```
+
+보안 취약점 신고 방법은 [SECURITY.md](SECURITY.md)를 참고하세요.
 
 ## 🙋 자주 묻는 질문
 
