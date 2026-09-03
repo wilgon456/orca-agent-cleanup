@@ -520,8 +520,12 @@ test('Codex 플러그인 캐시에서는 서명된 Orca 스킬만 격리한다',
   write(path.join(unrelated, 'SKILL.md'), 'Generic computer automation skill.\n');
 
   const findings = scanOrcaResidue(context);
-  assert(findings.some((item) => item.path === orcaSkill && item.kind === 'skill'));
-  assert(!findings.some((item) => item.path === unrelated));
+  const orcaSkillIdentity = context.filesystemIdentity(orcaSkill);
+  const unrelatedIdentity = context.filesystemIdentity(unrelated);
+  assert(findings.some((item) => (
+    context.filesystemIdentity(item.path) === orcaSkillIdentity && item.kind === 'skill'
+  )));
+  assert(!findings.some((item) => context.filesystemIdentity(item.path) === unrelatedIdentity));
   cleanOrcaResidue(context, {});
   assert(!exists(orcaSkill));
   assert(exists(unrelated));
