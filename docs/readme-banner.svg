@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="260" viewBox="0 0 1200 260" role="img" aria-labelledby="title desc">
+  <title id="title">Orca Agent Cleanup</title>
+  <desc id="desc">Scan. Quarantine. Verify. Restore.. Project banner.</desc>
+  <rect width="1200" height="260" rx="18" fill="#0f172a"/>
+  <rect x="0" y="0" width="14" height="260" fill="#22d3ee"/>
+  <path d="M735 0v260" stroke="#334155" stroke-width="1"/>
+  <text x="58" y="105" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="56" font-weight="700">Orca Agent Cleanup</text>
+  <text x="60" y="158" fill="#cbd5e1" font-family="Arial, Helvetica, sans-serif" font-size="24">Scan. Quarantine. Verify. Restore.</text>
+  <text x="60" y="216" fill="#22d3ee" font-family="Arial, Helvetica, sans-serif" font-size="19">github.com/wilgon456</text>
+  <g fill="none" stroke="#22d3ee" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"><path d="M920 50l80 30v62c0 32-42 65-80 82-38-17-80-50-80-82V80z M885 136l25 25 48-55"/></g>
+</svg>
