@@ -1,6 +1,6 @@
 <div align="center">
 
-![Orca Agent Cleanup](docs/readme-banner.svg)
+![Orca Agent Cleanup](https://raw.githubusercontent.com/wilgon456/orca-agent-cleanup/main/docs/readme-banner.svg)
 
 # Orca Agent Cleanup
 
@@ -20,7 +20,14 @@
 > 이 저장소는 Orca 또는 Stably와 관계없는 커뮤니티 도구입니다.<br>
 > 먼저 Orca 앱을 정상 제거하고 Claude, Codex 등 관련 에이전트를 모두 종료한 뒤 사용하세요.
 
-## 🆕 v1.4.0
+## 🆕 v1.5.0
+
+- `npx orca-agent-cleanup`으로 설치 없이 바로 실행합니다.
+- Orca 앱이 아직 설치돼 있거나 실행 중이면 `clean`을 멈춥니다. Orca는 켜질 때 훅과 플러그인을 다시 설치하므로, 앱을 두고 정리하면 다음 실행 때 되돌아가고 쓰던 자격증명만 격리돼 앱이 망가집니다. 그래도 진행하려면 `--force`를 붙입니다.
+- 앱을 지운 뒤에도 남아 도는 Orca 터미널 데몬을 찾아 보여 주고, `--stop-processes`를 붙이면 끕니다. 이름이 아니라 실행 파일 위치(Orca 앱 데이터의 `daemon-host` 등)로 판별합니다.
+- Copilot `hooks/orca.json`, Grok `hooks/orca-status.json`처럼 Orca가 통째로 만든 파일은 Orca 항목을 빼면 남는 게 없을 때 빈 껍데기를 남기지 않고 파일째 격리합니다. Orca 자신의 제거 규칙과 같습니다.
+
+## v1.4.0
 
 Orca v1.4.224와 2026-10-14 `main` 브랜치를 기준으로 다시 검증했습니다.
 
@@ -78,7 +85,15 @@ Orca 앱을 제거해도 공용 스킬 폴더와 각 에이전트 설정에는 �
 
 Node.js 18 이상이 필요합니다. Windows PowerShell, macOS Terminal, Linux 셸에서 명령은 같습니다.
 
-### 1. 저장소 받기
+### 1. 실행 방법
+
+설치할 필요 없이 `npx`로 바로 실행합니다.
+
+```bash
+npx orca-agent-cleanup scan
+```
+
+저장소를 받아 실행해도 됩니다. 이때는 아래 명령의 `npx orca-agent-cleanup`을 `node scripts/orca-agent-cleanup.mjs`로 바꿉니다.
 
 ```bash
 git clone https://github.com/wilgon456/orca-agent-cleanup.git
@@ -90,27 +105,27 @@ cd orca-agent-cleanup
 아무것도 변경하지 않고 발견된 항목만 보여줍니다.
 
 ```bash
-node scripts/orca-agent-cleanup.mjs scan
+npx orca-agent-cleanup scan
 ```
 
 ### 3. 정리 결과 미리보기
 
-앱 데이터와 음성 모델까지 포함한 예정 작업을 확인합니다.
+앱 데이터와 음성 모델, 남아 도는 Orca 프로세스까지 포함한 예정 작업을 확인합니다. Orca 앱이 아직 설치돼 있거나 실행 중이면 여기서 ⛔ 표시가 나옵니다. 그때는 앱부터 제거하세요.
 
 ```bash
-node scripts/orca-agent-cleanup.mjs clean --dry-run --include-app-data --include-voice-data
+npx orca-agent-cleanup clean --dry-run --include-app-data --include-voice-data --stop-processes
 ```
 
 ### 4. 복구 가능하게 정리
 
 ```bash
-node scripts/orca-agent-cleanup.mjs clean --include-app-data --include-voice-data
+npx orca-agent-cleanup clean --include-app-data --include-voice-data --stop-processes
 ```
 
 ### 5. 백업 무결성 확인
 
 ```bash
-node scripts/orca-agent-cleanup.mjs verify \
+npx orca-agent-cleanup verify \
   --manifest ~/OrcaAgentCleanupBackups/<실행시각-UUID>/manifest.json
 ```
 
@@ -160,7 +175,7 @@ Orca의 현재 공식 manifest에 등록된 다음 스킬을 검사합니다.
 `--project`를 사용하면 프로젝트의 `.agents`, `.claude`, `.factory`, `.continue`, `.trae`, `.grok`, `.augment` 스킬 폴더도 검사합니다.
 
 ```bash
-node scripts/orca-agent-cleanup.mjs scan --project /path/to/project
+npx orca-agent-cleanup scan --project /path/to/project
 ```
 
 같은 프로젝트의 `.orca/issue-command`, `.orca/drops`와 인접 `.orca-worktree-trash`는 사용자 파일이 섞일 수 있어 `--include-project-state`를 함께 지정한 경우에만 격리합니다.
@@ -222,7 +237,7 @@ Orca의 기본 음성 모델은 앱 데이터의 `speech-models` 아래에 저�
 사용자가 음성 모델 위치를 바꿨다면 해당 경로를 직접 지정하세요.
 
 ```bash
-node scripts/orca-agent-cleanup.mjs clean --dry-run \
+npx orca-agent-cleanup clean --dry-run \
   --include-voice-data \
   --voice-model-path /custom/path/to/speech-models
 ```
@@ -234,13 +249,13 @@ PowerShell에서는 줄 연결 문자 대신 한 줄로 실행하거나 백틱(`
 실행 중인 WSL 배포판의 `~/.orca-wsl`, `~/.local/share/orca`, CLI, 훅과 Skills를 포함하려면 다음처럼 미리 확인합니다.
 
 ```powershell
-node scripts/orca-agent-cleanup.mjs clean --dry-run --include-wsl
+npx orca-agent-cleanup clean --dry-run --include-wsl
 ```
 
 자동 발견되지 않는 WSL 홈은 `--wsl-home <경로>`로 추가할 수 있습니다. SSH에는 자동 로그인하지 않습니다. 원격 서버에서 이 도구를 직접 실행하거나 로컬에서 접근 가능한 원격 홈을 `--remote-home <경로>`로 지정한 뒤 `--include-remote`를 사용하세요.
 
 ```bash
-node scripts/orca-agent-cleanup.mjs clean --dry-run --include-remote --remote-home /mnt/remote/home/user
+npx orca-agent-cleanup clean --dry-run --include-remote --remote-home /mnt/remote/home/user
 ```
 
 `--include-user-state`는 `~/.orca` 전체를 하나의 복구 단위로 격리합니다. 자격증명, 세션, 키 바인딩과 사용자 작업물이 포함될 수 있으므로 완전 제거가 목적일 때만 사용하세요.
@@ -306,6 +321,8 @@ node scripts/orca-agent-cleanup.mjs clean --dry-run --include-remote --remote-ho
 | `restore` | 정리 manifest를 기준으로 파일·설정·Windows PATH를 복원합니다. |
 | `verify` | manifest와 백업 파일·디렉터리의 SHA-256 무결성을 검사합니다. |
 | `--dry-run` | `clean` 예정 작업만 표시합니다. |
+| `--stop-processes` | 앱 없이 남아 도는 Orca 백그라운드 프로세스를 끕니다. 되돌릴 수 없는 작업이라 복원 대상이 아닙니다. |
+| `--force` | Orca 앱이 설치·실행 중이어도 정리합니다. 앱이 다시 훅을 설치하므로 권장하지 않습니다. |
 | `--include-app-data` | Orca 앱 데이터와 그 안의 기본 음성 모델을 포함합니다. |
 | `--include-voice-data` | Windows의 별도 음성 캐시와 지정한 음성 경로를 포함합니다. |
 | `--include-user-state` | 자격증명·세션을 포함한 `~/.orca` 전체를 격리합니다. |
@@ -323,7 +340,7 @@ node scripts/orca-agent-cleanup.mjs clean --dry-run --include-remote --remote-ho
 전체 도움말:
 
 ```bash
-node scripts/orca-agent-cleanup.mjs --help
+npx orca-agent-cleanup --help
 ```
 
 ## ♻️ 복구 방법
@@ -333,7 +350,7 @@ node scripts/orca-agent-cleanup.mjs --help
 복원 전에 manifest, 경로 매핑과 백업 내용의 SHA-256을 검사할 수 있습니다. v1 백업은 당시 내용 해시를 기록하지 않았으므로 경로와 manifest만 검증합니다.
 
 ```bash
-node scripts/orca-agent-cleanup.mjs verify \
+npx orca-agent-cleanup verify \
   --manifest ~/OrcaAgentCleanupBackups/<실행시각-UUID>/manifest.json
 ```
 
@@ -342,14 +359,14 @@ manifest v2의 `cleanupStatus`가 `in-progress`라면 정리 도중 중단된 �
 먼저 Claude, Codex, Orca 등 관련 프로그램을 모두 종료하고 복원 예정 작업을 확인합니다.
 
 ```bash
-node scripts/orca-agent-cleanup.mjs restore --dry-run \
+npx orca-agent-cleanup restore --dry-run \
   --manifest ~/OrcaAgentCleanupBackups/<실행시각>/manifest.json
 ```
 
 확인 후 실제로 복원합니다.
 
 ```bash
-node scripts/orca-agent-cleanup.mjs restore \
+npx orca-agent-cleanup restore \
   --manifest ~/OrcaAgentCleanupBackups/<실행시각>/manifest.json
 ```
 

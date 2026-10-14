@@ -1,0 +1,45 @@
+name: Publish to npm
+
+# GitHub 릴리스를 게시하면 같은 버전을 npm에 올린다.
+# npm 신뢰 게시(trusted publishing)로 인증하므로 저장소에 npm 토큰을 두지 않는다.
+# npmjs.com의 패키지 설정에서 이 저장소와 publish.yml을 신뢰 게시자로 등록해야 동작한다.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Check release tag matches package version
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "릴리스 태그($GITHUB_REF_NAME)와 package.json 버전($version)이 다릅니다."
+            exit 1
+          fi
+      - name: Skip versions already on npm
+        id: published
+        run: |
+          if npm view "orca-agent-cleanup@${GITHUB_REF_NAME#v}" version >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "${GITHUB_REF_NAME#v}은 이미 npm에 있습니다. 게시를 건너뜁니다."
+          fi
+      - name: Run tests
+        if: steps.published.outputs.skip != 'true'
+        run: npm test
+      - name: Publish
+        if: steps.published.outputs.skip != 'true'
+        run: npm publish --provenance --access public

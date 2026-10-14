@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   buildContext,
   cleanOrcaResidue,
@@ -912,6 +914,8 @@ function isolatedContext(root, platform, extras = {}) {
     appDataCandidates: [],
     voiceCandidates: [],
     userPath: '',
+    runtime: extras.runtime,
+    stopProcess: extras.stopProcess,
   });
 }
 
@@ -1111,4 +1115,121 @@ test('Muse·OpenCode는 사용자 설정만 있으면 손대지 않는다', () =
   write(lookalike, 'export default {}; // 사용자가 같은 이름으로 만든 파일\n');
   const findings = scanOrcaResidue(context).filter((item) => item.kind === 'hook');
   assert.deepEqual(findings, []);
+});
+
+function windowsRuntimeSandbox(name) {
+  const root = makeSandbox(name);
+  const env = {
+    LOCALAPPDATA: path.join(root, 'AppData', 'Local'),
+    APPDATA: path.join(root, 'AppData', 'Roaming'),
+  };
+  return { root, env };
+}
+
+test('Orca 앱이 설치·실행 중이면 clean을 멈추고 --force로만 진행한다', () => {
+  const { root, env } = windowsRuntimeSandbox('installed');
+  const installDir = path.join(env.LOCALAPPDATA, 'Programs', 'orca');
+  const runtime = {
+    installations: [installDir],
+    processes: [{ pid: 4242, name: 'Orca.exe', path: path.join(installDir, 'Orca.exe') }],
+  };
+  const context = isolatedContext(root, 'win32', { env, runtime });
+  const settings = path.join(context.home, '.claude', 'settings.json');
+  writeJson(settings, { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'C:/Users/me/.orca/agent-hooks/claude-hook.cmd' }] }] } });
+
+  const kinds = scanOrcaResidue(context).map((item) => item.kind);
+  assert(kinds.includes('app-installed') && kinds.includes('app-running'));
+
+  const blocked = cleanOrcaResidue(context, {});
+  assert.equal(blocked.blocked, true);
+  assert.equal(blocked.errors.length, 1);
+  assert.match(fs.readFileSync(settings, 'utf8'), /agent-hooks/);
+  assert(!exists(context.backupRoot));
+
+  const preview = cleanOrcaResidue(context, { dryRun: true });
+  assert.equal(preview.blocked, true);
+  assert(preview.actions.some((item) => item.action === 'would-edit'));
+
+  const forced = cleanOrcaResidue(isolatedContext(root, 'win32', { env, runtime, backupName: 'forced' }), { force: true });
+  assert.equal(forced.blocked, false);
+  assert.deepEqual(forced.errors, []);
+  assert.doesNotMatch(fs.readFileSync(settings, 'utf8'), /agent-hooks/);
+});
+
+test('앱 없이 남은 Orca 데몬만 골라 --stop-processes일 때 끈다', () => {
+  const { root, env } = windowsRuntimeSandbox('daemon');
+  const daemon = path.join(env.LOCALAPPDATA, 'Orca', 'daemon-host', 'abc123', 'Orca.exe');
+  const runtime = {
+    installations: [],
+    processes: [
+      { pid: 101, name: 'Orca.exe', path: daemon },
+      { pid: 102, name: 'orca-terminal-daemon.exe', path: 'D:/old/orca-terminal-daemon.exe' },
+      { pid: 103, name: 'Code.exe', path: path.join(env.LOCALAPPDATA, 'Programs', 'Microsoft VS Code', 'Code.exe') },
+      { pid: 104, name: 'orca.exe', path: 'C:/tools/orca-screen-reader/orca.exe' },
+      { pid: process.pid, name: 'node.exe', path: path.join(env.LOCALAPPDATA, 'Orca', 'node.exe') },
+    ],
+  };
+  const stopped = [];
+  const context = isolatedContext(root, 'win32', { env, runtime, stopProcess: (pid) => stopped.push(pid) });
+
+  const processes = scanOrcaResidue(context).filter((item) => item.kind === 'process');
+  assert.deepEqual(processes.map((item) => item.pid).sort(), [101, 102]);
+  assert(processes.every((item) => item.requires === 'stopProcesses'));
+
+  const skipped = cleanOrcaResidue(context, {});
+  assert.deepEqual(stopped, []);
+  assert(skipped.actions.filter((item) => item.kind === 'process').every((item) => item.action === 'skipped'));
+
+  const preview = cleanOrcaResidue(context, { dryRun: true, stopProcesses: true });
+  assert.deepEqual(stopped, []);
+  assert.equal(preview.actions.filter((item) => item.action === 'would-stop').length, 2);
+
+  const result = cleanOrcaResidue(isolatedContext(root, 'win32', {
+    env, runtime, backupName: 'stop', stopProcess: (pid) => stopped.push(pid),
+  }), { stopProcesses: true });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(stopped.sort(), [101, 102]);
+  assert.equal(result.actions.filter((item) => item.action === 'stopped').length, 2);
+});
+
+test('Orca 항목만 있던 Copilot·Grok 훅 파일은 껍데기 없이 격리하고 복원한다', () => {
+  const root = makeSandbox('owned-files');
+  const context = isolatedContext(root, 'linux', { env: { COPILOT_HOME: '', GROK_HOME: '' } });
+  const copilot = path.join(context.home, '.copilot', 'hooks', 'orca.json');
+  const grok = path.join(context.home, '.grok', 'hooks', 'orca-status.json');
+  const orcaHook = (script) => ({ type: 'command', bash: `/home/me/.orca/agent-hooks/${script}` });
+  writeJson(copilot, { version: 1, hooks: { sessionStart: [orcaHook('copilot-hook.sh')] } });
+  writeJson(grok, {
+    hooks: {
+      SessionStart: [{ hooks: [{ type: 'command', command: '/home/me/.orca/agent-hooks/grok-hook.sh' }] }],
+      Stop: [{ hooks: [{ type: 'command', command: '/usr/local/bin/my-notify' }] }],
+    },
+  });
+  const copilotBefore = fs.readFileSync(copilot, 'utf8');
+
+  const findings = scanOrcaResidue(context).filter((item) => item.kind === 'hook');
+  assert.equal(findings.find((item) => item.path === path.resolve(copilot)).removeWhole, true);
+  assert.equal(findings.find((item) => item.path === path.resolve(grok)).removeWhole, false);
+
+  const result = cleanOrcaResidue(context, {});
+  assert.deepEqual(result.errors, []);
+  assert(!exists(copilot));
+  assert.deepEqual(JSON.parse(fs.readFileSync(grok, 'utf8')), {
+    hooks: { Stop: [{ hooks: [{ type: 'command', command: '/usr/local/bin/my-notify' }] }] },
+  });
+
+  const restored = restoreOrcaBackup(path.join(context.backupRoot, 'manifest.json'), { home: context.home, platform: 'linux' });
+  assert.deepEqual(restored.errors, []);
+  assert.equal(fs.readFileSync(copilot, 'utf8'), copilotBefore);
+  assert.match(fs.readFileSync(grok, 'utf8'), /grok-hook\.sh/);
+});
+
+test('CLI 버전과 npm 패키지 정보가 일치하고 배포 파일이 모두 있다', () => {
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const cli = spawnSync(process.execPath, [path.join(root, pkg.bin['orca-agent-cleanup']), '--version'], { encoding: 'utf8' });
+  assert.equal(cli.status, 0);
+  assert.equal(cli.stdout.trim(), pkg.version);
+  for (const file of pkg.files) assert(exists(path.join(root, file)), `배포 파일 없음: ${file}`);
+  assert.match(fs.readFileSync(path.join(root, pkg.bin['orca-agent-cleanup']), 'utf8'), /^#!\/usr\/bin\/env node/);
 });
