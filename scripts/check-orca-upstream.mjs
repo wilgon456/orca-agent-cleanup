@@ -21,12 +21,26 @@ for (const [file, expectedSha] of Object.entries(baseline.files)) {
   const metadata = await github(`contents/${file}?ref=main`);
   if (metadata.sha !== expectedSha) changed.push({ file, expectedSha, currentSha: metadata.sha });
 }
+// 에이전트 훅 설치 서비스가 늘거나 줄면 정리 대상 설정 파일도 달라진다.
+const tree = await github('git/trees/main?recursive=1');
+const hookServices = tree.tree
+  .map((entry) => entry.path.match(/^src\/main\/([^/]+)\/hook-service\.ts$/)?.[1])
+  .filter(Boolean)
+  .sort();
+const knownHookServices = new Set(baseline.hookServices || []);
+const addedHookServices = hookServices.filter((name) => !knownHookServices.has(name));
+const removedHookServices = [...knownHookServices].filter((name) => !hookServices.includes(name));
 const latest = await github('releases/latest');
 const result = {
   repository: baseline.repository,
   verifiedRelease: baseline.verifiedRelease,
   latestRelease: latest.tag_name,
   changed,
+  addedHookServices,
+  removedHookServices,
+  treeTruncated: Boolean(tree.truncated),
 };
 console.log(JSON.stringify(result, null, 2));
-if (changed.length > 0) process.exitCode = 2;
+if (changed.length > 0 || addedHookServices.length > 0 || removedHookServices.length > 0 || tree.truncated) {
+  process.exitCode = 2;
+}

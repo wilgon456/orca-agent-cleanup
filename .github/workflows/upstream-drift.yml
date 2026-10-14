@@ -32,5 +32,5 @@ jobs:
           if [ "$count" = "0" ]; then
             gh issue create \
               --title "$title" \
-              --body "Orca의 스킬·CLI·캐시 계약 파일이 기준선 이후 변경됐습니다. 자동 삭제 범위를 넓히기 전에 공식 소스와 .github/orca-upstream-baseline.json을 검토하세요. 실행: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+              --body "Orca의 스킬·CLI·캐시·에이전트 훅 계약 파일이나 훅 연동 목록이 기준선 이후 변경됐습니다. 자동 삭제 범위를 넓히기 전에 공식 소스와 .github/orca-upstream-baseline.json을 검토하세요. 실행: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           fi

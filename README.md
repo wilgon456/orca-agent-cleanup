@@ -65,15 +65,19 @@ Restart your coding agents and terminals afterward so their cached skill lists a
 | Target | Included by default? |
 | --- | --- |
 | Eight official Orca skills and signed copies in Codex plugin caches | Yes, after ownership verification |
-| Orca-managed agent hooks and marked extensions | Yes |
+| Orca-managed agent hooks and marked extensions (24 agent integrations, see below) | Yes |
 | Verified user CLI launchers and Orca PATH entries | Yes |
-| Managed hooks and encrypted voice token under `~/.orca` | Yes |
+| Managed hooks and Orca-encrypted credentials under `~/.orca` | Yes |
 | App data and its default voice models | `--include-app-data` |
 | Separate voice caches and custom model locations | `--include-voice-data` |
 | Running WSL distributions | `--include-wsl` |
 | Accessible remote homes | `--include-remote` |
 | All user state under `~/.orca` | `--include-user-state` |
 | Project `.orca` state and adjacent worktree trash | `--include-project-state` |
+
+Hook cleanup follows every agent integration in Orca's `src/main/*/hook-service.ts`: Claude, OpenClaude, Codex, Gemini, Antigravity, Cursor, Command Code, Droid, Copilot, Grok, Devin, Kimi, Amp, Hermes, Qoder (including Qoder CN), Qwen Code, CodeBuddy, ZCode, Kiro (each agent file in `~/.kiro/agents`), Muse, jcode, DeepSeek Harness (`~/.dsh/cordis.patch.yml`), OpenCode (status plugins and `tui.json` registrations) and MiMo Code (inside app data). Windows hook commands wrapped in PowerShell or `-EncodedCommand` are decoded before matching. Only Orca entries are removed; the rest of each file is kept.
+
+The credential files are `openai-speech-token.enc`, `bitbucket-credential.*`, `linear-token.enc`, `linear-workspaces.json`, `jira-tokens`, `jira-sites.json`, `zcode-plan-api-key.enc`, `opencode-go-api-key.enc` and `minimax-*.enc`. Orca encrypts them with its own app key, so they are useless once the app is gone. Other files under `~/.orca`, such as worktrees and `keybindings.json`, stay unless you pass `--include-user-state`.
 
 The official skill names are `computer-use`, `orca-cli`, `orchestration`, `orca-per-workspace-env`, `orca-emulator`, `orca-emulator-android`, `orca-linear` and `linear-tickets`. A matching name alone is insufficient: unrelated providers' skills, including OpenAI's computer-use and Paseo skills, are preserved.
 
@@ -139,9 +143,13 @@ Automatic cleanup does not remove the app, change macOS privacy permissions, uni
 
 The app can be uninstalled through Windows Settings, the macOS Applications folder or the Linux installation method you originally used. Complete that step before cleaning its integrations.
 
+## Version 1.4.0
+
+This version is checked against Orca v1.4.224 and the 2026-10-14 `main` branch. It adds hook cleanup for Qoder, Qwen Code, CodeBuddy, ZCode, Kiro, Muse, jcode, DeepSeek Harness and OpenCode, catches PowerShell-wrapped and base64-encoded Windows hook commands, quarantines Orca's newer encrypted credentials, scans three new skill folders and makes the upstream monitor flag new or removed agent integrations.
+
 ## Version 1.3.0
 
-This version adds Linux AppImage and signed plugin-cache coverage, recovery journals, backup hashes, UUID destinations, upstream contract monitoring, SHA-pinned Actions and Node.js 24 / CodeQL checks.
+Version 1.3.0 added Linux AppImage and signed plugin-cache coverage, recovery journals, backup hashes, UUID destinations, upstream contract monitoring, SHA-pinned Actions and Node.js 24 / CodeQL checks.
 
 ## Development
 
