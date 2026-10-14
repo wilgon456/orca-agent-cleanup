@@ -1,6 +1,6 @@
 {
   "name": "orca-agent-cleanup",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Find and safely quarantine leftover Orca (stablyai/orca) skills, agent hooks, CLI launchers, credentials and app data after uninstalling Orca, with verified restore.",
   "keywords": [
     "orca",

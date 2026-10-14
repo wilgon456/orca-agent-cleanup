@@ -6,9 +6,9 @@
 
 남은 Orca 연결을 검사하고, 확인된 잔재를 복구 가능하게 격리합니다.
 
-[English](README.md) · **한국어**
+[English](https://github.com/wilgon456/orca-agent-cleanup/blob/main/README.md) · **한국어**
 
-![project: utility](https://img.shields.io/badge/project-utility-22d3ee?style=flat-square) ![stack: Node.js 18+](https://img.shields.io/badge/stack-Node.js%2018%2B-22d3ee?style=flat-square) [![License](https://img.shields.io/badge/license-MIT-22d3ee?style=flat-square)](LICENSE)
+![project: utility](https://img.shields.io/badge/project-utility-22d3ee?style=flat-square) ![stack: Node.js 18+](https://img.shields.io/badge/stack-Node.js%2018%2B-22d3ee?style=flat-square) [![License](https://img.shields.io/badge/license-MIT-22d3ee?style=flat-square)](https://github.com/wilgon456/orca-agent-cleanup/blob/main/LICENSE)
 
 [빠른 시작](#-빠른-시작) · [정리 범위](#-무엇을-정리하나요) · [복구](#-복구-방법)
 
@@ -427,7 +427,7 @@ Windows 전용 기존 도구의 회귀 테스트:
 .\tests\Invoke-SmokeTest.ps1
 ```
 
-보안 취약점 신고 방법은 [SECURITY.md](SECURITY.md)를 참고하세요.
+보안 취약점 신고 방법은 [SECURITY.md](https://github.com/wilgon456/orca-agent-cleanup/blob/main/SECURITY.md)를 참고하세요.
 
 ## 🙋 자주 묻는 질문
 
@@ -458,7 +458,7 @@ Orca가 `~/.orca`에 저장한 암호화 음성 토큰과 Bitbucket·Linear·Jir
 
 ## 📄 라이선스
 
-[MIT License](LICENSE)로 배포합니다.
+[MIT License](https://github.com/wilgon456/orca-agent-cleanup/blob/main/LICENSE)로 배포합니다.
 
 ---
 
