@@ -238,8 +238,9 @@ function defaultHookCandidates(home, env) {
     ['json', path.join(home, '.cursor', 'hooks.json')],
     ['json', path.join(home, '.commandcode', 'settings.json')],
     ['json', path.join(home, '.factory', 'settings.json')],
-    ['json', path.join(env.COPILOT_HOME || path.join(home, '.copilot'), 'hooks', 'orca.json')],
-    ['json', path.join(env.GROK_HOME || path.join(home, '.grok'), 'hooks', 'orca-status.json')],
+    // Orca가 통째로 만드는 파일. Orca 항목만 있던 파일은 빈 껍데기를 남기지 않고 격리한다.
+    ['json', path.join(env.COPILOT_HOME || path.join(home, '.copilot'), 'hooks', 'orca.json'), true],
+    ['json', path.join(env.GROK_HOME || path.join(home, '.grok'), 'hooks', 'orca-status.json'), true],
     ['json', path.join(home, '.config', 'devin', 'config.json')],
     ['kimi', path.join(kimiHome, 'config.toml')],
     ['amp', path.join(home, '.config', 'amp', 'plugins', 'orca-agent-status.ts')],
@@ -251,7 +252,7 @@ function defaultHookCandidates(home, env) {
     candidates.push(['hermes-config', path.join(hermesHome, 'config.yaml')]);
   }
   if (env.APPDATA) candidates.push(['json', path.join(env.APPDATA, 'Devin', 'config.json')]);
-  return candidates.map(([type, filePath]) => ({ type, path: filePath }));
+  return candidates.map(([type, filePath, ownedFile = false]) => ({ type, path: filePath, ownedFile }));
 }
 
 function defaultExtensionCandidates(home) {
@@ -403,6 +404,104 @@ function discoverRunningWslHomes(platform) {
   }
 }
 
+// Orca가 아직 설치돼 있거나 실행 중이면 앱이 켜질 때 훅·플러그인을 다시 설치하고,
+// 쓰던 자격증명을 격리하면 앱이 망가진다. 정리 전에 이 상태를 확인한다.
+function runPowerShellJson(script) {
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    `[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); ${script}`], {
+    encoding: 'utf8', windowsHide: true, timeout: 20000,
+  });
+  if (result.status !== 0 || !result.stdout.trim()) return [];
+  try {
+    const value = JSON.parse(result.stdout);
+    return Array.isArray(value) ? value : [value];
+  } catch {
+    return [];
+  }
+}
+
+function listRunningProcesses(platform) {
+  if (platform === 'win32') {
+    return runPowerShellJson('Get-CimInstance Win32_Process | Select-Object ProcessId,Name,ExecutablePath | ConvertTo-Json -Compress')
+      .map((item) => ({ pid: item.ProcessId, name: item.Name || '', path: item.ExecutablePath || '' }));
+  }
+  if (platform === 'linux') {
+    return listMatchingChildren('/proc', /^\d+$/).map((entry) => {
+      const pid = Number(path.basename(entry));
+      try {
+        const exe = fs.readlinkSync(path.join(entry, 'exe'));
+        return { pid, name: path.basename(exe), path: exe };
+      } catch {
+        return null;
+      }
+    }).filter(Boolean);
+  }
+  const result = spawnSync('ps', ['-axo', 'pid=,comm='], { encoding: 'utf8', timeout: 10000 });
+  if (result.status !== 0) return [];
+  return result.stdout.split('\n').map((line) => line.match(/^\s*(\d+)\s+(.+?)\s*$/)).filter(Boolean)
+    .map((match) => ({ pid: Number(match[1]), name: path.basename(match[2]), path: match[2] }));
+}
+
+function listOrcaInstallations(platform, home, env) {
+  if (platform === 'win32') {
+    const fixed = [
+      env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs', 'orca'),
+      env.ProgramFiles && path.join(env.ProgramFiles, 'Orca'),
+      env.PROGRAMFILES && path.join(env.PROGRAMFILES, 'Orca'),
+    ].filter((dir) => dir && pathExists(path.join(dir, 'Orca.exe')));
+    // electron-builder NSIS 제거 정보. 사용자가 다른 폴더(/D)에 설치했어도 여기서 찾는다.
+    const registered = runPowerShellJson([
+      "$keys = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',",
+      "'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',",
+      "'HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*';",
+      "Get-ItemProperty $keys -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq 'Orca' -and $_.UninstallString -match 'Uninstall Orca\\.exe' } |",
+      'Select-Object InstallLocation,UninstallString | ConvertTo-Json -Compress',
+    ].join(' ')).map((item) => item.InstallLocation || path.dirname(String(item.UninstallString || '').replace(/^"|"(?:\s.*)?$/g, '')));
+    return unique([...fixed, ...registered.filter(Boolean)]);
+  }
+  if (platform === 'darwin') {
+    return ['/Applications/Orca.app', path.join(home, 'Applications', 'Orca.app')]
+      .filter((app) => readText(path.join(app, 'Contents', 'Info.plist')).includes('com.stablyai.orca'));
+  }
+  return [];
+}
+
+function probeRuntime(platform, home, env) {
+  return { installations: listOrcaInstallations(platform, home, env), processes: listRunningProcesses(platform) };
+}
+
+// 설치 폴더 안의 프로세스는 앱 본체, 앱 데이터 아래(daemon-host 등)로 옮겨 돌던 프로세스는 남은 데몬이다.
+function classifyOrcaProcesses(context) {
+  const runtime = context.runtime || { installations: [], processes: [] };
+  const installDirs = unique([
+    ...runtime.installations,
+    ...(context.platform === 'win32' && context.env.LOCALAPPDATA ? [path.join(context.env.LOCALAPPDATA, 'Programs', 'orca')] : []),
+    ...(context.platform === 'darwin' ? ['/Applications/Orca.app', path.join(context.home, 'Applications', 'Orca.app')] : []),
+  ]);
+  const dataDirs = unique(defaultAppDataCandidates(context.platform, context.home, context.env));
+  const inside = (dirs, target) => dirs.some((dir) => isSameOrDescendant(dir, target)
+    || (context.platform !== 'linux' && isSameOrDescendant(dir.toLowerCase(), target.toLowerCase())));
+  const app = [];
+  const leftover = [];
+  for (const item of runtime.processes) {
+    if (!item?.path || item.pid === process.pid) continue;
+    const target = path.resolve(item.path);
+    const appImage = context.platform === 'linux' && /^\/tmp\/\.mount_orca/i.test(item.path);
+    if (inside(installDirs, target) || appImage) app.push(item);
+    else if (inside(dataDirs, target) || /^orca-terminal-daemon(?:\.exe)?$/i.test(item.name)) leftover.push(item);
+  }
+  return { installations: runtime.installations, app, leftover };
+}
+
+function stopProcess(pid, platform) {
+  if (platform === 'win32') {
+    const result = spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { encoding: 'utf8', windowsHide: true });
+    if (result.status !== 0) throw new Error(`프로세스를 끄지 못했습니다(PID ${pid}): ${(result.stderr || result.stdout).trim()}`);
+    return;
+  }
+  process.kill(pid, 'SIGTERM');
+}
+
 function isWindowsOrcaPathEntry(entry, context) {
   if (context.platform !== 'win32') return false;
   const expanded = entry.replace(/%([^%]+)%/g, (_, name) => context.env[name] || context.env[name.toUpperCase()] || `%${name}%`);
@@ -517,6 +616,11 @@ export function buildContext(overrides = {}) {
         .map((target) => ({ path: target, requires: 'includeRemote' }))),
     ],
     userPath: overrides.userPath ?? readWindowsUserPath(platform),
+    // 실제 사용자 홈을 검사할 때만 이 PC의 설치·프로세스 상태를 읽는다(임시 홈을 쓰는 테스트는 제외).
+    runtime: overrides.runtime || (platform === process.platform && home === path.resolve(os.homedir())
+      ? probeRuntime(platform, home, env)
+      : { installations: [], processes: [] }),
+    stopProcess: overrides.stopProcess || ((pid) => stopProcess(pid, platform)),
     backupRoot: path.resolve(overrides.backupRoot || path.join(home, 'OrcaAgentCleanupBackups', timestamp())),
   };
 }
@@ -765,6 +869,19 @@ function hasOpenCodePluginSignature(target) {
   }
 }
 
+// Orca grok-hook-config-cleanup.ts의 isOrcaOwnedRemnant와 같은 기준: Orca 항목을 빼면 hooks가 비고
+// version 말고 남는 키가 없다. 사용자가 dotfiles로 연결한 심볼릭 링크는 파일을 지우지 않고 고친다.
+function isOrcaOwnedRemnant(target) {
+  try {
+    if (fs.lstatSync(target).isSymbolicLink()) return false;
+  } catch {
+    return false;
+  }
+  const value = readJson(target);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return Object.keys(pruneJsonHooks(value)).every((key) => key === 'version');
+}
+
 function hasHookMarker(candidate) {
   if (!pathExists(candidate.path)) return false;
   if (candidate.type === 'hermes') {
@@ -844,6 +961,16 @@ function finding(kind, target, reason, requires = null, meta = {}) {
 
 export function scanOrcaResidue(context) {
   const findings = [];
+  const runtime = classifyOrcaProcesses(context);
+  for (const target of runtime.installations) {
+    findings.push(finding('app-installed', target, 'Orca 앱이 아직 설치돼 있습니다. 운영체제의 제거 기능으로 먼저 지우세요', 'never'));
+  }
+  for (const item of runtime.app) {
+    findings.push(finding('app-running', item.path, `Orca 앱이 실행 중입니다(PID ${item.pid}). 앱을 끄고 제거한 뒤 정리하세요`, 'never', { pid: item.pid }));
+  }
+  for (const item of runtime.leftover) {
+    findings.push(finding('process', item.path, `앱 없이 남아 돌고 있는 Orca 백그라운드 프로세스(PID ${item.pid})`, 'stopProcesses', { pid: item.pid }));
+  }
   const lockedNamesByRoot = lockedOrcaSkillNamesByRoot(context);
 
   for (const root of context.skillRoots) {
@@ -886,8 +1013,9 @@ export function scanOrcaResidue(context) {
       if (!plugin || !hasHookMarker(plugin)) continue;
     }
     if (hasHookMarker(candidate)) {
-      const removeWhole = candidate.type === 'codex-legacy'
-        && stripDelimitedBlock(readText(candidate.path), CODEX_LEGACY_START, CODEX_LEGACY_END).trim() === '';
+      const removeWhole = (candidate.type === 'codex-legacy'
+        && stripDelimitedBlock(readText(candidate.path), CODEX_LEGACY_START, CODEX_LEGACY_END).trim() === '')
+        || (candidate.ownedFile && isOrcaOwnedRemnant(candidate.path));
       findings.push(finding('hook', candidate.path, `Orca 관리형 ${candidate.type} 훅`, candidate.requires || null,
         { hookType: candidate.type, removeWhole }));
     }
@@ -949,7 +1077,7 @@ export function scanOrcaResidue(context) {
   }
 
   const uniqueFindings = new Map();
-  for (const item of findings) uniqueFindings.set(`${item.kind}\0${item.path}`, item);
+  for (const item of findings) uniqueFindings.set(`${item.kind}\0${item.path}\0${item.pid ?? ''}`, item);
   return [...uniqueFindings.values()].sort((a, b) => a.path.localeCompare(b.path));
 }
 
@@ -1209,9 +1337,8 @@ function selected(finding, options) {
 
 function plannedMutationForFinding(item) {
   if (item.kind === 'skill-lock' || item.kind === 'path-entry') return 'edit';
-  if (item.kind !== 'hook') return 'quarantine';
-  if (Object.hasOwn(HOOK_EDITORS, item.hookType)) return 'edit';
-  if (item.hookType === 'codex-legacy' && !item.removeWhole) return 'edit';
+  if (item.kind !== 'hook' || item.removeWhole) return 'quarantine';
+  if (Object.hasOwn(HOOK_EDITORS, item.hookType) || item.hookType === 'codex-legacy') return 'edit';
   return 'quarantine';
 }
 
@@ -1259,7 +1386,32 @@ export function cleanOrcaResidue(context, options = {}) {
   const actions = [];
   const errors = [];
   const createdAt = new Date().toISOString();
-  const hasSelectedWork = findings.some((item) => selected(item, options));
+  const blockers = findings.filter((item) => item.kind === 'app-installed' || item.kind === 'app-running');
+  const blocked = blockers.length > 0 && !options.force;
+  if (blocked && !dryRun) {
+    errors.push({
+      path: blockers[0].path,
+      message: 'Orca 앱이 아직 설치돼 있거나 실행 중이라 정리하지 않았습니다. 앱이 켜질 때 훅을 다시 설치하기 때문입니다. 앱을 먼저 제거하고, 그래도 진행하려면 --force를 붙이세요.',
+    });
+    return { findings, actions, errors, backupRoot: context.backupRoot, dryRun, blocked };
+  }
+
+  // 백그라운드 프로세스가 앱 데이터를 붙잡고 있으면 격리가 실패하므로 먼저 끈다. 되돌릴 수 없는 작업이라 복원 대상이 아니다.
+  for (const item of findings.filter((candidate) => candidate.kind === 'process' && selected(candidate, options))) {
+    if (dryRun) {
+      actions.push({ action: 'would-stop', ...item });
+      continue;
+    }
+    try {
+      context.stopProcess(item.pid);
+      actions.push({ action: 'stopped', ...item });
+    } catch (error) {
+      errors.push({ path: item.path, message: error.message });
+      actions.push({ action: 'error', error: error.message, ...item });
+    }
+  }
+
+  const hasSelectedWork = findings.some((item) => item.kind !== 'process' && selected(item, options));
   let manifestPath = null;
   if (!dryRun && hasSelectedWork) {
     try {
@@ -1279,6 +1431,7 @@ export function cleanOrcaResidue(context, options = {}) {
     .map((item) => item.path);
 
   for (const item of findings) {
+    if (item.kind === 'process' && selected(item, options)) continue;
     if (item.kind !== 'user-state'
         && selectedUserStateRoots.some((root) => isSameOrDescendant(root, item.path))) {
       actions.push({ action: 'covered', ...item });
@@ -1303,7 +1456,7 @@ export function cleanOrcaResidue(context, options = {}) {
     }
     try {
       let action;
-      if (item.kind === 'hook' && Object.hasOwn(HOOK_EDITORS, item.hookType)) {
+      if (item.kind === 'hook' && !item.removeWhole && Object.hasOwn(HOOK_EDITORS, item.hookType)) {
         const backup = HOOK_EDITORS[item.hookType](item.path, context, dryRun);
         action = { action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item };
       } else if (item.kind === 'hook' && item.hookType === 'codex-legacy' && !item.removeWhole) {
@@ -1334,7 +1487,7 @@ export function cleanOrcaResidue(context, options = {}) {
   }
 
   if (manifestPath) updateCleanupJournal(manifestPath, context, createdAt, 'complete', actions, errors);
-  return { findings, actions, errors, backupRoot: context.backupRoot, dryRun };
+  return { findings, actions, errors, backupRoot: context.backupRoot, dryRun, blocked };
 }
 
 function assertSafeRestorePath(target, backupRoot, home) {

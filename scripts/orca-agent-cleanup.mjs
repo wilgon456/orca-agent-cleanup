@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import fs from 'node:fs';
 import process from 'node:process';
 import {
   buildContext,
@@ -10,16 +11,18 @@ import {
   verifyOrcaBackup,
 } from './orca-cleanup-core.mjs';
 
-const VERSION = '1.4.0';
+const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 const HELP = `
-Orca Agent Cleanup v${VERSION} — Windows·macOS·Linux 공통 정리 도구
+Orca Agent Cleanup v${VERSION} : Windows·macOS·Linux 공통 정리 도구
 
 사용법:
-  node scripts/orca-agent-cleanup.mjs scan [옵션]
-  node scripts/orca-agent-cleanup.mjs clean [옵션]
-  node scripts/orca-agent-cleanup.mjs restore --manifest <manifest.json> [옵션]
-  node scripts/orca-agent-cleanup.mjs verify --manifest <manifest.json> [옵션]
+  npx orca-agent-cleanup scan [옵션]
+  npx orca-agent-cleanup clean [옵션]
+  npx orca-agent-cleanup restore --manifest <manifest.json> [옵션]
+  npx orca-agent-cleanup verify --manifest <manifest.json> [옵션]
+
+저장소에서 직접 실행할 때는 npx orca-agent-cleanup 대신 node scripts/orca-agent-cleanup.mjs를 씁니다.
 
 명령:
   scan                         잔재를 검사합니다(기본 명령, 변경 없음).
@@ -29,6 +32,8 @@ Orca Agent Cleanup v${VERSION} — Windows·macOS·Linux 공통 정리 도구
 
 옵션:
   --dry-run                    clean의 예정 작업만 표시합니다.
+  --stop-processes             앱 없이 남아 도는 Orca 백그라운드 프로세스를 끕니다.
+  --force                      Orca 앱이 설치·실행 중이어도 정리합니다(권장하지 않음).
   --include-app-data           Orca 앱 데이터·캐시를 포함합니다.
   --include-voice-data         별도 음성 모델 캐시를 포함합니다.
   --include-user-state         ~/.orca 전체(자격증명·세션 포함)를 포함합니다.
@@ -46,16 +51,16 @@ Orca Agent Cleanup v${VERSION} — Windows·macOS·Linux 공통 정리 도구
   -h, --help                   도움말을 표시합니다.
 
 예시:
-  node scripts/orca-agent-cleanup.mjs scan
-  node scripts/orca-agent-cleanup.mjs clean --dry-run --include-app-data --include-voice-data
-  node scripts/orca-agent-cleanup.mjs clean --include-app-data --include-voice-data
-  node scripts/orca-agent-cleanup.mjs restore --dry-run --manifest /path/to/manifest.json
+  npx orca-agent-cleanup scan
+  npx orca-agent-cleanup clean --dry-run --include-app-data --include-voice-data --stop-processes
+  npx orca-agent-cleanup clean --include-app-data --include-voice-data --stop-processes
+  npx orca-agent-cleanup restore --dry-run --manifest /path/to/manifest.json
 `;
 
 function parseArgs(argv) {
   const result = {
     command: 'scan', projects: [], customVoicePaths: [], wslHomes: [], remoteHomes: [], json: false,
-    dryRun: false, includeAppData: false, includeVoiceData: false,
+    dryRun: false, force: false, stopProcesses: false, includeAppData: false, includeVoiceData: false,
     includeUserState: false, includeWsl: false, includeRemote: false, includeProjectState: false,
   };
   const args = [...argv];
@@ -63,6 +68,8 @@ function parseArgs(argv) {
   while (args.length) {
     const arg = args.shift();
     if (arg === '--dry-run') result.dryRun = true;
+    else if (arg === '--force') result.force = true;
+    else if (arg === '--stop-processes') result.stopProcesses = true;
     else if (arg === '--include-app-data') result.includeAppData = true;
     else if (arg === '--include-voice-data') result.includeVoiceData = true;
     else if (arg === '--include-user-state') result.includeUserState = true;
@@ -97,7 +104,7 @@ function icon(kind) {
   return ({ skill: '🧩', 'skill-lock': '🔒', hook: '🪝', 'shared-state': '🔗',
     'skill-transaction': '🧹', extension: '🧱', 'app-data': '🗂️', 'voice-data': '🎙️',
     'user-state': '🔐', 'wsl-state': '🐧', 'remote-state': '🌐', cli: '⌨️',
-    'project-state': '📁',
+    'project-state': '📁', 'app-installed': '⛔', 'app-running': '⛔', process: '⚙️',
     'path-entry': '🛣️', unverified: '🛡️' })[kind] || '•';
 }
 
@@ -113,10 +120,20 @@ function printScan(findings) {
     console.log(`   ${item.reason}${option}`);
   }
   console.log(`\n총 ${findings.length}개가 확인되었습니다. 검사만 수행했으며 변경 사항은 없습니다.`);
+  if (findings.some((item) => ['app-installed', 'app-running'].includes(item.kind))) {
+    console.log('\n⛔ Orca 앱이 아직 설치돼 있거나 실행 중입니다. 앱이 켜질 때 훅을 다시 설치하므로 먼저 앱을 제거하세요. 그 전까지 clean은 멈춥니다.');
+  }
 }
 
 function printClean(result) {
   console.log(`\nOrca Agent Cleanup ${result.dryRun ? '미리보기' : '정리 결과'}\n`);
+  if (result.blocked && !result.dryRun) {
+    console.log(`⛔ ${result.errors[0].message}`);
+    return;
+  }
+  if (result.blocked) {
+    console.log('⛔ Orca 앱이 아직 설치돼 있거나 실행 중입니다. 실제 clean은 앱을 제거하기 전까지 멈춥니다.\n');
+  }
   if (!result.actions.length) {
     console.log('✅ 정리할 항목이 없습니다.');
     return;
@@ -126,6 +143,7 @@ function printClean(result) {
     'would-edit': '🔎 수정 예정', skipped: '⏭️ 옵션 제외', covered: '↳ 상위 상태에 포함',
     unchanged: '➖ 변경 없음', error: '❌ 오류',
     'pending-quarantine': '⚠️ 격리 상태 확인 필요', 'pending-edit': '⚠️ 수정 상태 확인 필요',
+    stopped: '✅ 프로세스 끔', 'would-stop': '🔎 프로세스 끌 예정',
   };
   for (const item of result.actions) console.log(`${labels[item.action] || item.action}  ${item.path}`);
   if (!result.dryRun && result.actions.some((item) => ['quarantined', 'edited'].includes(item.action))) {
@@ -198,6 +216,6 @@ try {
   }
 } catch (error) {
   console.error(`오류: ${error.message}`);
-  console.error('도움말: node scripts/orca-agent-cleanup.mjs --help');
+  console.error('도움말: npx orca-agent-cleanup --help');
   process.exitCode = 1;
 }

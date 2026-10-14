@@ -1,0 +1,42 @@
+{
+  "name": "orca-agent-cleanup",
+  "version": "1.5.0",
+  "description": "Find and safely quarantine leftover Orca (stablyai/orca) skills, agent hooks, CLI launchers, credentials and app data after uninstalling Orca, with verified restore.",
+  "keywords": [
+    "orca",
+    "stablyai",
+    "uninstall",
+    "cleanup",
+    "claude-code",
+    "codex",
+    "agent-hooks",
+    "skills"
+  ],
+  "license": "MIT",
+  "author": "wilgon456",
+  "homepage": "https://github.com/wilgon456/orca-agent-cleanup#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wilgon456/orca-agent-cleanup.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wilgon456/orca-agent-cleanup/issues"
+  },
+  "type": "module",
+  "bin": {
+    "orca-agent-cleanup": "scripts/orca-agent-cleanup.mjs"
+  },
+  "files": [
+    "scripts/orca-agent-cleanup.mjs",
+    "scripts/orca-cleanup-core.mjs",
+    "README.md",
+    "README.ko.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test tests/orca-agent-cleanup.test.mjs"
+  }
+}
