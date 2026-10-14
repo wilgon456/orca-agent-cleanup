@@ -350,12 +350,15 @@ test('Orca 공식 스킬 발견 루트를 모두 포함한다', () => {
     '.hermes/skills',
     '.prime/agent/skills',
     '.gemini/skills',
+    '.gemini/config/skills',
     '.gemini/antigravity/skills',
     '.cursor/skills',
     '.factory/skills',
     '.continue/skills',
     '.trae-cn/skills',
     '.augment/skills',
+    '.config/muse/skills',
+    '.zcode/skills',
   ]);
   assert.deepEqual(PROJECT_SKILL_ROOTS, [
     '.agents/skills',
@@ -885,4 +888,227 @@ test('restore는 Windows PATH 원본과 현재 값을 모두 보존한다', () =
   assert.equal(result.errors.length, 0);
   assert.equal(currentPath, 'C:\\Original;C:\\Tools');
   assert.equal(fs.readFileSync(result.actions[0].conflictBackup, 'utf8').trim(), 'C:\\Current;C:\\Tools');
+});
+
+// Orca 1.4.214 src/main/claude/hook-settings.ts getWindowsPowerShellLifecycleCommand와 같은 모양.
+function windowsPowerShellHook(scriptFileName) {
+  return `$scriptPath = Join-Path $env:USERPROFILE '.orca\\agent-hooks\\${scriptFileName}'; `
+    + 'if (Test-Path -LiteralPath $scriptPath -PathType Leaf) { & $scriptPath; exit $LASTEXITCODE }; '
+    + "[Console]::In.ReadToEnd() | Out-Null; Write-Output '{}'; exit 0";
+}
+
+function encodedPowerShell(command) {
+  const encoded = Buffer.from(command, 'utf16le').toString('base64');
+  return `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encoded}`;
+}
+
+function isolatedContext(root, platform, extras = {}) {
+  return buildContext({
+    platform,
+    home: path.join(root, 'home'),
+    env: { XDG_CONFIG_HOME: '', CODEX_HOME: '', KIRO_HOME: '', JCODE_HOME: '', DSH_HOME: '', ...extras.env },
+    backupRoot: path.join(root, extras.backupName || 'backup'),
+    cliCandidates: [],
+    appDataCandidates: [],
+    voiceCandidates: [],
+    userPath: '',
+  });
+}
+
+test('PowerShell·base64로 감싼 Windows 훅 명령도 Orca 훅으로 식별한다', () => {
+  const powershell = windowsPowerShellHook('qwen-code-hook.cmd');
+  assert.equal(internals.isOrcaHookString(powershell), true);
+  assert.equal(internals.isOrcaHookString(encodedPowerShell(powershell)), true);
+  assert.equal(internals.isOrcaHookString('C:/Users/me/.orca/agent-hooks/orca-agent-hook.exe claude'), true);
+  assert.equal(internals.isOrcaHookString('if [ -f "${HOME-}/.orca/agent-hooks/codebuddy-hook.sh" ]; then :; fi'), true);
+  assert.equal(internals.isOrcaHookString(encodedPowerShell("Write-Output 'my hook'")), false);
+  assert.equal(internals.isOrcaHookString('C:/tools/my.orca/agent-hooks/run.cmd'), false);
+  assert.equal(internals.isOrcaHookString('C:/tools/agent-hooks/run.cmd'), false);
+});
+
+test('Orca 1.4.214의 새 에이전트 훅에서 Orca 항목만 지우고 복원할 수 있다', () => {
+  const root = makeSandbox('new-agents');
+  const context = isolatedContext(root, 'win32');
+  const home = context.home;
+  const userHook = { matcher: '*', hooks: [{ type: 'command', command: 'node C:/tools/audit.js' }] };
+  const qwen = path.join(home, '.qwen', 'settings.json');
+  const codebuddy = path.join(home, '.codebuddy', 'settings.json');
+  const qoderCn = path.join(home, '.qoder-cn', 'settings.json');
+  const zcode = path.join(home, '.zcode', 'cli', 'config.json');
+  const kiroAgent = path.join(home, '.kiro', 'agents', 'reviewer.json');
+  const kiroPlain = path.join(home, '.kiro', 'agents', 'plain.json');
+  const muse = path.join(home, '.config', 'muse', 'settings.json');
+  const jcode = path.join(home, '.jcode', 'config.toml');
+  const dshOnly = path.join(home, '.dsh', 'cordis.patch.yml');
+  const openCode = path.join(home, '.config', 'opencode');
+  const tui = path.join(openCode, 'tui.json');
+  const statusPlugin = path.join(openCode, 'plugins', 'orca-opencode-status.js');
+  const tuiPlugin = path.join(openCode, 'plugins', 'orca-opencode-status-tui');
+  const userPlugin = path.join(openCode, 'plugins', 'my-plugin.js');
+  const credentials = ['linear-token.enc', 'jira-tokens', 'zcode-plan-api-key.enc', 'opencode-go-api-key.enc']
+    .map((name) => path.join(home, '.orca', name));
+  const keybindings = path.join(home, '.orca', 'keybindings.json');
+
+  writeJson(qwen, {
+    model: { name: 'qwen3-coder' },
+    hooks: {
+      Stop: [
+        { hooks: [{ type: 'command', command: windowsPowerShellHook('qwen-code-hook.cmd'), shell: 'powershell', timeout: 30 }] },
+        userHook,
+      ],
+    },
+  });
+  writeJson(codebuddy, {
+    hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: encodedPowerShell(windowsPowerShellHook('codebuddy-hook.cmd')) }] }] },
+    theme: 'dark',
+  });
+  writeJson(qoderCn, {
+    hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `${home.replaceAll('\\', '/')}/.orca/agent-hooks/qoder-cn-hook.cmd` }] }] },
+  });
+  writeJson(zcode, {
+    hooks: { enabled: true, events: { Stop: [{ type: 'command', command: 'C:/Users/me/.orca/agent-hooks/zcode-hook.cmd' }] } },
+    provider: 'keep',
+  });
+  writeJson(kiroAgent, {
+    name: 'reviewer',
+    hooks: { agentSpawn: [{ command: 'C:/Users/me/.orca/agent-hooks/kiro-hook.cmd' }, { command: 'echo mine' }] },
+  });
+  writeJson(kiroPlain, { name: 'plain', hooks: { stop: [{ command: 'echo mine' }] } });
+  writeJson(muse, {
+    schema_version: 1,
+    managed_hooks_path: path.join(home, '.orca', 'agent-hooks', 'muse-hooks.json'),
+    managed_hooks_env_vars: ['ORCA_AGENT_HOOK_PORT', 'ORCA_PANE_KEY', 'USERPROFILE', 'MY_VAR'],
+    editor: 'vim',
+  });
+  write(jcode, [
+    '[model]',
+    'name = "jcode-pro"',
+    '',
+    '[hooks]',
+    `session_start = "${path.join(home, '.orca', 'agent-hooks', 'jcode-hook.cmd').replaceAll('\\', '\\\\')}"`,
+    'turn_end = "C:\\\\tools\\\\notify.cmd"',
+    '',
+    '[ui]',
+    'theme = "dark"',
+    '',
+  ].join('\r\n'));
+  write(dshOnly, [
+    '# >>> orca-managed-dsh-hooks (managed by Orca; do not edit) >>>',
+    '- insert:',
+    '    - id: orca-agent-hooks',
+    "      name: '@deepseek-ai/dsh-hooks-claude-code'",
+    '      config:',
+    "        configPath: 'C:\\Users\\me\\.orca\\agent-hooks\\dsh-hooks.json'",
+    '# <<< orca-managed-dsh-hooks <<<',
+    '',
+  ].join('\n'));
+  write(statusPlugin, 'if (process.env.ORCA_OPENCODE_AGENT && process.env.ORCA_OPENCODE_AGENT !== "opencode") return {};\n');
+  write(path.join(tuiPlugin, 'tui.js'), 'const ORCA_STATUS_AGENT = "opencode";\n');
+  write(userPlugin, 'export default {};\n');
+  writeJson(tui, {
+    theme: 'tokyonight',
+    plugin: [`file:///${tuiPlugin.replaceAll('\\', '/').replaceAll(' ', '%20')}/tui.js`, 'my-tui-plugin'],
+  });
+  for (const credential of credentials) write(credential, 'secret');
+  writeJson(keybindings, { 'ctrl+k': 'palette' });
+
+  const scanned = scanOrcaResidue(context);
+  const hookPaths = scanned.filter((item) => item.kind === 'hook').map((item) => item.path);
+  for (const target of [qwen, codebuddy, qoderCn, zcode, kiroAgent, muse, jcode, dshOnly, tui, statusPlugin, tuiPlugin]) {
+    assert(hookPaths.includes(path.resolve(target)), `탐지 누락: ${target}`);
+  }
+  assert(!hookPaths.includes(path.resolve(kiroPlain)));
+  assert(!hookPaths.includes(path.resolve(userPlugin)));
+  const sharedPaths = scanned.filter((item) => item.kind === 'shared-state').map((item) => item.path);
+  for (const credential of credentials) assert(sharedPaths.includes(path.resolve(credential)));
+  assert(!sharedPaths.includes(path.resolve(keybindings)));
+
+  const before = Object.fromEntries([qwen, jcode, dshOnly, muse, tui].map((file) => [file, fs.readFileSync(file, 'utf8')]));
+  const result = cleanOrcaResidue(context, {});
+  assert.deepEqual(result.errors, []);
+
+  assert.deepEqual(JSON.parse(fs.readFileSync(qwen, 'utf8')), { model: { name: 'qwen3-coder' }, hooks: { Stop: [userHook] } });
+  assert.deepEqual(JSON.parse(fs.readFileSync(codebuddy, 'utf8')), { theme: 'dark' });
+  assert.deepEqual(JSON.parse(fs.readFileSync(qoderCn, 'utf8')), {});
+  assert.deepEqual(JSON.parse(fs.readFileSync(zcode, 'utf8')), { hooks: { enabled: true }, provider: 'keep' });
+  assert.deepEqual(JSON.parse(fs.readFileSync(kiroAgent, 'utf8')).hooks, { agentSpawn: [{ command: 'echo mine' }] });
+  assert.deepEqual(JSON.parse(fs.readFileSync(muse, 'utf8')), {
+    schema_version: 1, managed_hooks_env_vars: ['USERPROFILE', 'MY_VAR'], editor: 'vim',
+  });
+  const jcodeAfter = fs.readFileSync(jcode, 'utf8');
+  assert.doesNotMatch(jcodeAfter, /jcode-hook/);
+  assert.match(jcodeAfter, /turn_end = "C:\\\\tools\\\\notify\.cmd"\r\n/);
+  assert.match(jcodeAfter, /\[ui\]\r\ntheme = "dark"/);
+  assert.equal(fs.readFileSync(dshOnly, 'utf8'), '[]\n');
+  assert.deepEqual(JSON.parse(fs.readFileSync(tui, 'utf8')), { theme: 'tokyonight', plugin: ['my-tui-plugin'] });
+  assert(!exists(statusPlugin) && !exists(tuiPlugin) && exists(userPlugin));
+  assert(credentials.every((credential) => !exists(credential)));
+  assert(exists(keybindings));
+
+  const second = cleanOrcaResidue(isolatedContext(root, 'win32', { backupName: 'backup-2' }), { dryRun: true });
+  assert.deepEqual(second.findings.filter((item) => item.kind === 'hook'), []);
+
+  const restored = restoreOrcaBackup(path.join(context.backupRoot, 'manifest.json'), { home, platform: 'win32' });
+  assert.deepEqual(restored.errors, []);
+  for (const [file, text] of Object.entries(before)) assert.equal(fs.readFileSync(file, 'utf8'), text);
+  assert(exists(statusPlugin) && exists(path.join(tuiPlugin, 'tui.js')));
+  assert(credentials.every((credential) => exists(credential)));
+});
+
+test('dsh 블록 밖의 사용자 패치와 짝 없는 시작 표식은 보존한다', () => {
+  const root = makeSandbox('dsh');
+  const context = isolatedContext(root, 'linux');
+  const patch = path.join(context.home, '.dsh', 'cordis.patch.yml');
+  write(patch, [
+    '# >>> orca-managed-dsh-hooks (managed by Orca; do not edit) >>>',
+    '- insert:',
+    '    - id: mine-before',
+    '# >>> orca-managed-dsh-hooks (managed by Orca; do not edit) >>>',
+    '- insert:',
+    '    - id: orca-agent-hooks',
+    '# <<< orca-managed-dsh-hooks <<<',
+    '- insert:',
+    '    - id: mine-after',
+    '',
+  ].join('\n'));
+  const result = cleanOrcaResidue(context, {});
+  assert.deepEqual(result.errors, []);
+  assert.equal(fs.readFileSync(patch, 'utf8'), [
+    '# >>> orca-managed-dsh-hooks (managed by Orca; do not edit) >>>',
+    '- insert:',
+    '    - id: mine-before',
+    '- insert:',
+    '    - id: mine-after',
+    '',
+  ].join('\n'));
+});
+
+test('jcode는 [hooks] 표 밖이나 여러 줄 문자열 속 Orca 경로를 지우지 않는다', () => {
+  const text = [
+    '[notes]',
+    'body = """',
+    '[hooks]',
+    'session_start = "/home/me/.orca/agent-hooks/jcode-hook.sh"',
+    '"""',
+    'other = "/home/me/.orca/agent-hooks/jcode-hook.sh"',
+    '[hooks.extra]',
+    'turn_end = "/home/me/.orca/agent-hooks/jcode-hook.sh"',
+    '[hooks]',
+    "pre_tool = '/home/me/.orca/agent-hooks/jcode-hook.sh' # managed",
+    'post_tool = "/usr/local/bin/mine"',
+  ].join('\n');
+  assert.deepEqual([...internals.jcodeManagedHookLines(text)], [9]);
+});
+
+test('Muse·OpenCode는 사용자 설정만 있으면 손대지 않는다', () => {
+  const root = makeSandbox('muse-opencode');
+  const context = isolatedContext(root, 'darwin');
+  const muse = path.join(context.home, '.config', 'muse', 'settings.json');
+  const tui = path.join(context.home, '.config', 'opencode', 'tui.json');
+  const lookalike = path.join(context.home, '.config', 'opencode', 'plugins', 'orca-opencode-status.js');
+  writeJson(muse, { schema_version: 1, managed_hooks_path: '/home/me/hooks/muse.json', managed_hooks_env_vars: ['ORCA_PANE_KEY'] });
+  writeJson(tui, { plugin: ['file:///home/me/plugins/orca-opencode-status-tui-fork/tui.js'] });
+  write(lookalike, 'export default {}; // 사용자가 같은 이름으로 만든 파일\n');
+  const findings = scanOrcaResidue(context).filter((item) => item.kind === 'hook');
+  assert.deepEqual(findings, []);
 });

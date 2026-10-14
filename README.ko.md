@@ -20,7 +20,17 @@
 > 이 저장소는 Orca 또는 Stably와 관계없는 커뮤니티 도구입니다.<br>
 > 먼저 Orca 앱을 정상 제거하고 Claude, Codex 등 관련 에이전트를 모두 종료한 뒤 사용하세요.
 
-## 🆕 v1.3.0
+## 🆕 v1.4.0
+
+Orca v1.4.224와 2026-10-14 `main` 브랜치를 기준으로 다시 검증했습니다.
+
+- Qoder·Qwen Code·CodeBuddy·ZCode·Kiro·Muse·jcode·DeepSeek Harness·OpenCode에 Orca가 넣은 훅과 플러그인을 정리합니다.
+- Windows에서 PowerShell 명령이나 `-EncodedCommand`(base64)로 감싼 훅 명령도 풀어서 식별합니다.
+- Orca가 새로 저장하는 Bitbucket·Linear·Jira·ZCode·OpenCode Go·MiniMax 암호화 자격증명을 격리합니다.
+- `~/.gemini/config/skills`, `~/.config/muse/skills`, `~/.zcode/skills` 스킬 폴더를 검사합니다.
+- 상류 감시가 훅 관련 계약 파일과 에이전트 연동 목록의 변화도 알립니다.
+
+## v1.3.0
 
 - Linux AppImage가 만드는 `~/.cache/orca/appimage`와 서명이 확인된 Codex 플러그인 캐시의 Orca 스킬을 탐지합니다.
 - 정리 전에 manifest v2 journal을 만들고 각 작업 전후 상태를 기록해 중단된 정리도 `restore`로 복구할 수 있습니다.
@@ -52,7 +62,7 @@ Orca 앱을 제거해도 공용 스킬 폴더와 각 에이전트 설정에는 �
 | Codex 플러그인 캐시의 서명된 Orca 스킬 | ✅ | ✅ | ✅ | ✅ |
 | `computer-use`·`orca-cli`·`orchestration` | ✅ | ✅ | ✅ | ✅ |
 | Claude·Codex·Gemini 등 Orca 관리형 훅 | ✅ | ✅ | ✅ | ✅ |
-| `~/.orca`의 관리형 훅·암호화 음성 토큰 | ✅ | ✅ | ✅ | ✅ |
+| `~/.orca`의 관리형 훅·Orca 암호화 자격증명 | ✅ | ✅ | ✅ | ✅ |
 | Orca CLI 경로·런처 | ✅ | ✅ | ✅ | ✅ |
 | Orca 앱 데이터와 기본 음성 모델 | ✅ | ✅ | ✅ | `--include-app-data` |
 | 별도·사용자 지정 음성 모델 경로 | ✅ | ✅ | ✅ | `--include-voice-data` |
@@ -141,6 +151,8 @@ Orca의 현재 공식 manifest에 등록된 다음 스킬을 검사합니다.
 ~/.gemini/antigravity/skills    ~/.cursor/skills
 ~/.factory/skills               ~/.continue/skills
 ~/.trae-cn/skills               ~/.augment/skills
+~/.gemini/config/skills         ~/.config/muse/skills
+~/.zcode/skills
 ```
 
 `CLAUDE_CONFIG_DIR`, `GROK_HOME`, `HERMES_HOME`으로 이동된 Skills와 Windows의 `%LOCALAPPDATA%\hermes\skills`도 검사합니다. Skills 설치가 중단되어 남은 `.orca-skill-extract-*`, `.*.orca-staging-*`, `.*.orca-placement-*` 등 Orca 전용 트랜잭션 경로도 격리합니다.
@@ -162,12 +174,18 @@ Orca가 연결할 수 있는 다음 에이전트의 설정을 검사합니다.
 ```text
 Claude / OpenClaude / Codex / Gemini / Antigravity / Cursor
 Amp / Droid / Command Code / Grok / Copilot / Hermes / Devin / Kimi
+Qoder / Qoder CN / Qwen Code / CodeBuddy / ZCode / Kiro / Muse
+jcode / DeepSeek Harness / OpenCode / MiMo Code
 ```
 
-- JSON 설정에서는 `.orca/agent-hooks` 등 Orca 명령이 들어간 훅만 제거합니다.
-- Kimi의 Orca 관리 블록만 제거합니다.
+- JSON 설정에서는 `.orca/agent-hooks` 등 Orca 명령이 들어간 훅만 제거합니다. Windows용으로 PowerShell이나 `-EncodedCommand`에 감싼 명령은 풀어서 확인합니다.
+- Kiro는 전역 설정이 없어 Orca가 `~/.kiro/agents`의 에이전트 파일마다 훅을 넣으므로, 각 파일에서 Orca 훅만 제거합니다.
+- Kimi와 DeepSeek Harness(`~/.dsh/cordis.patch.yml`)는 Orca 관리 블록만 제거합니다. dsh 파일에 주석만 남으면 Orca와 같이 빈 목록 `[]`을 되돌려 놓습니다.
+- jcode는 `~/.jcode/config.toml`의 `[hooks]` 표에서 Orca 스크립트를 부르는 줄만 지웁니다.
+- Muse는 `settings.json`의 `managed_hooks_path`가 Orca 훅 파일을 가리킬 때만 그 값과 Orca 환경 변수 이름을 지웁니다.
+- OpenCode는 `~/.config/opencode/plugins`의 Orca 상태 플러그인을 격리하고 `tui.json`에서 그 플러그인 등록만 지웁니다. MiMo Code 플러그인은 Orca 앱 데이터 안에만 있어 `--include-app-data`로 정리됩니다.
 - Amp·Hermes는 Orca 관리 표식이 확인된 플러그인만 격리합니다.
-- `CLAUDE_CONFIG_DIR`, `GROK_HOME`, `HERMES_HOME`, `KIMI_CODE_HOME`을 반영합니다.
+- `CLAUDE_CONFIG_DIR`, `GROK_HOME`, `HERMES_HOME`, `KIMI_CODE_HOME`, `CODEX_HOME`, `KIRO_HOME`, `JCODE_HOME`, `DSH_HOME`, `XDG_CONFIG_HOME`을 반영합니다.
 - `@orca-managed-pi-extension` 표식이 확인된 Pi·OMP·Prime 확장만 격리합니다.
 - Codex의 `orca-agent-status.config.toml`과 `BEGIN/END ORCA AGENT STATUS HOOKS` 레거시 블록을 정리합니다.
 - 권한, 모델, 타사 훅 등 나머지 설정은 보존합니다.
@@ -178,8 +196,9 @@ Amp / Droid / Command Code / Grok / Copilot / Hermes / Devin / Kimi
 - Windows 사용자 `PATH`의 공식 Orca CLI 경로
 - macOS에서 Orca 앱을 가리키는 `/usr/local/bin/orca`, `~/.local/bin/orca`
 - Linux의 `~/.local/bin/orca-ide`와 `# orca-serve-bare-orca-dispatcher` 표식이 있는 `~/.local/bin/orca`
-- `~/.orca/agent-hooks` 관리형 훅과 `openai-speech-token.enc` 음성 토큰
-- `~/.orca` 전체와 그 안의 자격증명·세션은 기본적으로 보존하며 `--include-user-state`에서만 함께 격리
+- `~/.orca/agent-hooks` 관리형 훅
+- Orca가 자기 앱 키로 암호화해 앱 없이는 쓸 수 없는 자격증명: `openai-speech-token.enc`, `bitbucket-credential.*`, `linear-token.enc`, `linear-workspaces.json`, `jira-tokens`, `jira-sites.json`, `zcode-plan-api-key.enc`, `opencode-go-api-key.enc`, `minimax-*.enc`
+- `~/.orca` 전체와 그 안의 세션·worktree·`keybindings.json`은 기본적으로 보존하며 `--include-user-state`에서만 함께 격리
 
 macOS 런처는 심볼릭 링크 대상 또는 파일 내용이 `Orca.app`을 가리키는 경우에만 격리합니다. Linux에서는 공식 `orca-ide` 런처와 Orca가 만든 dispatcher만 대상으로 하며, GNOME `orca`는 유지합니다.
 
@@ -244,7 +263,8 @@ node scripts/orca-agent-cleanup.mjs clean --dry-run --include-remote --remote-ho
 | 스킬 | 공식 이름 8종이면서 해당 스킬 폴더의 `stablyai/orca` 잠금 출처 또는 Orca 고유 문구가 확인됨 |
 | Codex 플러그인 캐시 | 깊이·항목 수를 제한해 탐색하고 `skills/<공식 이름>/SKILL.md`의 Orca 서명이 확인됨 |
 | 프로젝트 스킬 | `--project`로 지정한 해당 프로젝트의 잠금 파일과 스킬 폴더가 서로 일치함 |
-| 에이전트 훅 | 명령이 정확히 `.orca/agent-hooks`를 참조하거나 Orca 관리 표식이 확인됨 |
+| 에이전트 훅 | 명령이 정확히 `.orca/agent-hooks`를 참조하거나(PowerShell·base64로 감싼 명령은 풀어서 확인) Orca 관리 표식이 확인됨 |
+| OpenCode 플러그인 | 공식 파일 이름이면서 내용에 Orca 상태 플러그인 서명이 확인됨 |
 | 음성 캐시 | 경로 안에서 Orca 공식 음성 모델 ID가 확인됨 |
 | macOS CLI | 런처가 실제 `Orca.app/Contents/Resources/bin`을 가리킴 |
 | Linux CLI | `orca-ide`가 Orca 리소스 런처를 가리키거나 dispatcher에 공식 표식이 있음 |
@@ -267,7 +287,7 @@ node scripts/orca-agent-cleanup.mjs clean --dry-run --include-remote --remote-ho
 ├── skill-transaction/  # 중단된 Skills 설치·삭제 트랜잭션
 ├── hook/               # 격리한 관리형 훅
 ├── extension/          # Orca 관리형 Pi·OMP·Prime 확장
-├── shared-state/       # ~/.orca 안의 확인된 훅·음성 토큰만
+├── shared-state/       # ~/.orca 안의 확인된 훅·Orca 암호화 자격증명만
 ├── user-state/         # 명시적으로 포함한 ~/.orca 전체
 ├── wsl-state/          # 명시적으로 포함한 WSL 상태
 ├── remote-state/       # 명시적으로 포함한 SSH 릴레이·세션 상태
@@ -404,7 +424,7 @@ Windows 전용 기존 도구의 회귀 테스트:
 <details>
 <summary><strong>음성 API 키도 남아 있나요?</strong></summary>
 
-Orca가 저장한 암호화 음성 토큰 `~/.orca/openai-speech-token.enc`만 개별 격리합니다. `~/.orca` 전체, 운영체제 키체인과 다른 프로그램의 API 키는 건드리지 않습니다.
+Orca가 `~/.orca`에 저장한 암호화 음성 토큰과 Bitbucket·Linear·Jira·ZCode·OpenCode Go·MiniMax 자격증명만 개별 격리합니다. `~/.orca` 전체, 운영체제 키체인과 다른 프로그램의 API 키는 건드리지 않습니다.
 
 </details>
 

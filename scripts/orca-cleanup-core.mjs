@@ -27,12 +27,15 @@ export const HOME_SKILL_ROOTS = Object.freeze([
   '.hermes/skills',
   '.prime/agent/skills',
   '.gemini/skills',
+  '.gemini/config/skills',
   '.gemini/antigravity/skills',
   '.cursor/skills',
   '.factory/skills',
   '.continue/skills',
   '.trae-cn/skills',
   '.augment/skills',
+  '.config/muse/skills',
+  '.zcode/skills',
 ]);
 
 // Orca가 프로젝트에서 추가로 검사하는 스킬 루트.
@@ -66,6 +69,50 @@ const ORCA_HOOK_PATTERN = /(?:[\\/]\.orca(?:-wsl|-relay)?[\\/]agent-hooks[\\/]|O
 const MANAGED_FILE_PATTERN = /Managed by Orca\. Do not edit; changes may be overwritten\./i;
 const KIMI_START = '# >>> orca-managed-kimi-hooks (managed by Orca; do not edit) >>>';
 const KIMI_END = '# <<< orca-managed-kimi-hooks <<<';
+// Orca src/main/dsh/dsh-home-patch.ts의 관리 블록 표식.
+const DSH_START = '# >>> orca-managed-dsh-hooks (managed by Orca; do not edit) >>>';
+const DSH_END = '# <<< orca-managed-dsh-hooks <<<';
+// 경로 구분자를 '/'로 정규화한 뒤 검사한다. PowerShell 명령은 '.orca\agent-hooks\'처럼
+// 앞에 구분자 없이 따옴표로 시작하므로 ORCA_HOOK_PATTERN만으로는 놓친다.
+const ORCA_HOOK_PATH_PATTERN = /(?:^|[^A-Za-z0-9_.-])\.orca(?:-wsl|-relay)?\/agent-hooks\//i;
+// Orca src/main/muse/hook-config-json.ts의 MUSE_MANAGED_HOOK_ENV_VARS 중 Orca 전용 이름.
+// USERPROFILE은 사용자가 직접 넣었을 수도 있어 남긴다.
+const MUSE_ORCA_ENV_VARS = new Set([
+  'ORCA_AGENT_HOOK_PORT',
+  'ORCA_AGENT_HOOK_TOKEN',
+  'ORCA_AGENT_HOOK_ENV',
+  'ORCA_AGENT_HOOK_VERSION',
+  'ORCA_AGENT_HOOK_TRANSPORT',
+  'ORCA_AGENT_HOOK_ENDPOINT',
+  'ORCA_PANE_KEY',
+  'ORCA_TAB_ID',
+  'ORCA_WORKTREE_ID',
+  'ORCA_AGENT_LAUNCH_TOKEN',
+]);
+// Orca가 사용자 OpenCode 설정 폴더의 plugins/에 직접 쓰는 상태 플러그인.
+const OPENCODE_PLUGIN_ENTRIES = Object.freeze([
+  'orca-opencode-status.js',
+  'orca-opencode2-status.js',
+  'orca-opencode-status-tui',
+  'orca-opencode2-status-tui',
+  'orca-opencode-startup-prompt',
+]);
+const OPENCODE_PLUGIN_SIGNATURE = /ORCA_OPENCODE_AGENT|ORCA_STATUS_AGENT|["']orca-opencode(?:2-status|-status|-startup-prompt)["']/;
+const OPENCODE_TUI_ENTRY_PATTERN = /[\\/]plugins[\\/](?:orca-opencode2?-status-tui|orca-opencode-startup-prompt)[\\/]tui\.js$/i;
+// ~/.orca 안의 Orca 전용 자격증명. Orca 앱 키로 암호화돼 앱 없이는 쓸 수 없다.
+const ORCA_CREDENTIAL_FILES = Object.freeze([
+  'openai-speech-token.enc',
+  'bitbucket-credential.enc',
+  'bitbucket-credential.json',
+  'linear-token.enc',
+  'linear-workspaces.json',
+  'jira-tokens',
+  'jira-sites.json',
+  'zcode-plan-api-key.enc',
+  'opencode-go-api-key.enc',
+  'minimax-api-key.enc',
+  'minimax-session-cookie.enc',
+]);
 const ORCA_VOICE_MODEL_IDS = new Set([
   'parakeet-tdt-0.6b-v3-int8',
   'parakeet-tdt-0.6b-v2-int8',
@@ -108,6 +155,23 @@ function readJson(target) {
   }
 }
 
+// Orca createManagedCommandMatcher와 같은 방식: -EncodedCommand(UTF-16LE base64)를 풀어 함께 본다.
+function hookSearchText(value) {
+  const decoded = [...value.matchAll(/\s-EncodedCommand\s+([A-Za-z0-9+/=]+)/gi)].map((match) => {
+    try {
+      return Buffer.from(match[1], 'base64').toString('utf16le');
+    } catch {
+      return '';
+    }
+  });
+  return [value, ...decoded].join('\n').replace(/[\\/]+/g, '/');
+}
+
+function isOrcaHookString(value) {
+  if (typeof value !== 'string') return false;
+  return ORCA_HOOK_PATTERN.test(value) || ORCA_HOOK_PATH_PATTERN.test(hookSearchText(value));
+}
+
 function defaultHomeSkillRoots(home) {
   return HOME_SKILL_ROOTS.map((relative) => path.join(home, ...relative.split('/')));
 }
@@ -146,10 +210,29 @@ function defaultHookCandidates(home, env) {
     path.join(home, '.hermes'),
     env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'hermes'),
   ]);
+  const configHomes = unique([env.XDG_CONFIG_HOME, path.join(home, '.config')]);
+  const codexHomes = unique([env.CODEX_HOME, path.join(home, '.codex')]);
+  const kiroAgentsDir = path.join(env.KIRO_HOME || path.join(home, '.kiro'), 'agents');
   const candidates = [
     ['json', path.join(home, '.claude', 'settings.json')],
     ['json', path.join(home, '.openclaude', 'settings.json')],
-    ['json', path.join(home, '.codex', 'hooks.json')],
+    ...codexHomes.map((codexHome) => ['json', path.join(codexHome, 'hooks.json')]),
+    // Orca가 Claude 형식 설정을 그대로 쓰는 에이전트(src/main/claude/hook-settings.ts).
+    ['json', path.join(home, '.qoder', 'settings.json')],
+    ['json', path.join(home, '.qoder-cn', 'settings.json')],
+    ['json', path.join(home, '.qwen', 'settings.json')],
+    ['json', path.join(home, '.codebuddy', 'settings.json')],
+    ['json', path.join(home, '.zcode', 'cli', 'config.json')],
+    // Kiro는 전역 훅 설정이 없어 Orca가 에이전트 파일마다 훅을 넣는다.
+    ['json-dir', kiroAgentsDir],
+    ['jcode', path.join(env.JCODE_HOME || path.join(home, '.jcode'), 'config.toml')],
+    ['dsh', path.join(env.DSH_HOME || path.join(home, '.dsh'), 'cordis.patch.yml')],
+    ...configHomes.flatMap((configHome) => [
+      ['muse', path.join(configHome, 'muse', 'settings.json')],
+      ['opencode-tui', path.join(configHome, 'opencode', 'tui.json')],
+      ['opencode-tui', path.join(configHome, 'opencode', 'tui.jsonc')],
+      ...OPENCODE_PLUGIN_ENTRIES.map((name) => ['opencode-plugin', path.join(configHome, 'opencode', 'plugins', name)]),
+    ]),
     ['json', path.join(home, '.gemini', 'settings.json')],
     ['json', path.join(home, '.gemini', 'config', 'hooks.json')],
     ['json', path.join(home, '.cursor', 'hooks.json')],
@@ -400,7 +483,7 @@ export function buildContext(overrides = {}) {
       path.join(home, '.orca', 'agent-hooks'),
       path.join(home, '.orca', 'claude-agent-teams-bin'),
       path.join(home, '.orca', 'managed-hook-install.lock'),
-      path.join(home, '.orca', 'openai-speech-token.enc'),
+      ...ORCA_CREDENTIAL_FILES.map((name) => path.join(home, '.orca', name)),
       path.join(grokHome, 'hooks', 'orca-status.json.orca-cleaned-symlink'),
     ]),
     conditionalStateCandidates: overrides.conditionalStateCandidates || [
@@ -604,6 +687,84 @@ function stripDelimitedBlock(content, startMarker, endMarker) {
   return `${before}\n\n${after}`;
 }
 
+function splitLinesWithEol(text) {
+  return { lines: text.split('\n').map((line) => line.replace(/\r$/, '')), eol: text.includes('\r\n') ? '\r\n' : '\n' };
+}
+
+function parseTomlSingleLineString(valueText) {
+  const literal = valueText.match(/^'([^']*)'\s*(?:#.*)?$/);
+  if (literal) return literal[1];
+  const basic = valueText.match(/^"((?:[^"\\]|\\.)*)"\s*(?:#.*)?$/);
+  if (!basic) return null;
+  const escapes = { b: '\b', t: '\t', n: '\n', f: '\f', r: '\r', '"': '"', '\\': '\\' };
+  return basic[1].replace(/\\(u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)/g, (_, escape) => (
+    escape.length > 1 ? String.fromCodePoint(Number.parseInt(escape.slice(1), 16)) : (escapes[escape] ?? escape)
+  ));
+}
+
+// jcode ~/.jcode/config.toml의 [hooks] 표에서 Orca 스크립트를 부르는 줄 번호(src/main/jcode/hook-config.ts).
+function jcodeManagedHookLines(text) {
+  const { lines } = splitLinesWithEol(text);
+  const managed = new Set();
+  let inHooks = false;
+  let multiline = null;
+  lines.forEach((line, index) => {
+    if (multiline) {
+      if (line.includes(multiline)) multiline = null;
+      return;
+    }
+    if (/^\s*\[\[/.test(line)) {
+      inHooks = false;
+      return;
+    }
+    const header = line.match(/^\s*\[\s*([^[\]]+?)\s*\]\s*(?:#.*)?$/);
+    if (header) {
+      inHooks = header[1] === 'hooks';
+      return;
+    }
+    const pair = line.match(/^\s*[A-Za-z0-9_-]+\s*=\s*(.*)$/);
+    if (!pair) return;
+    const opener = ['"""', "'''"].find((quote) => pair[1].startsWith(quote));
+    if (opener) {
+      if (pair[1].indexOf(opener, opener.length) < 0) multiline = opener;
+      return;
+    }
+    if (inHooks && isOrcaHookString(parseTomlSingleLineString(pair[1]))) managed.add(index);
+  });
+  return managed;
+}
+
+// dsh-home-patch.ts와 같이 가장 가까운 시작 표식과 그 뒤 첫 끝 표식을 짝짓는다.
+function dshManagedRegion(lines) {
+  let start = -1;
+  for (const [index, line] of lines.entries()) {
+    if (line.trim() === DSH_START) start = index;
+    else if (line.trim() === DSH_END && start !== -1) return { start, end: index };
+  }
+  return null;
+}
+
+function isOrcaOpenCodeTuiEntry(item) {
+  const raw = Array.isArray(item) ? item[0] : item;
+  if (typeof raw !== 'string') return false;
+  let decoded = raw;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    // 잘못된 퍼센트 인코딩이면 원문으로 판단한다.
+  }
+  return OPENCODE_TUI_ENTRY_PATTERN.test(decoded);
+}
+
+function hasOpenCodePluginSignature(target) {
+  try {
+    const file = fs.lstatSync(target).isDirectory() ? path.join(target, 'tui.js') : target;
+    return OPENCODE_PLUGIN_SIGNATURE.test(readText(file));
+  } catch {
+    return false;
+  }
+}
+
 function hasHookMarker(candidate) {
   if (!pathExists(candidate.path)) return false;
   if (candidate.type === 'hermes') {
@@ -613,12 +774,23 @@ function hasHookMarker(candidate) {
       return MANAGED_FILE_PATTERN.test(text) || ORCA_HOOK_PATTERN.test(text);
     });
   }
+  if (candidate.type === 'opencode-plugin') return hasOpenCodePluginSignature(candidate.path);
   const text = readText(candidate.path);
   if (candidate.type === 'kimi') return text.includes(KIMI_START) && text.includes(KIMI_END);
+  if (candidate.type === 'dsh') return dshManagedRegion(splitLinesWithEol(text).lines) !== null;
+  if (candidate.type === 'jcode') return jcodeManagedHookLines(text).size > 0;
+  if (candidate.type === 'muse') return isOrcaHookString(readJson(candidate.path)?.managed_hooks_path);
+  if (candidate.type === 'opencode-tui') {
+    const plugins = readJson(candidate.path)?.plugin;
+    // 주석이 있는 JSONC는 해석하지 못하지만 Orca 항목이 보이면 알린다. 수정 단계에서 오류로 멈춘다.
+    return Array.isArray(plugins)
+      ? plugins.some(isOrcaOpenCodeTuiEntry)
+      : /plugins[\\/]+(?:orca-opencode2?-status-tui|orca-opencode-startup-prompt)[\\/]+tui\.js/i.test(text);
+  }
   if (candidate.type === 'codex-legacy') return text.includes(CODEX_LEGACY_START);
   if (candidate.type === 'amp') return MANAGED_FILE_PATTERN.test(text);
   if (candidate.type === 'hermes-config') return /^\s*-\s*orca-status\s*$/m.test(text);
-  return ORCA_HOOK_PATTERN.test(text) || MANAGED_FILE_PATTERN.test(text);
+  return isOrcaHookString(text) || MANAGED_FILE_PATTERN.test(text);
 }
 
 function hasManagedExtensionMarker(target) {
@@ -704,7 +876,10 @@ export function scanOrcaResidue(context) {
     }
   }
 
-  for (const candidate of context.hookCandidates) {
+  const hookCandidates = context.hookCandidates.flatMap((candidate) => (candidate.type === 'json-dir'
+    ? listMatchingChildren(candidate.path, /\.json$/i).map((file) => ({ ...candidate, type: 'json', path: file }))
+    : [candidate]));
+  for (const candidate of hookCandidates) {
     if (candidate.type === 'hermes-config') {
       const plugin = context.hookCandidates.find((item) => item.type === 'hermes'
         && path.dirname(path.dirname(item.path)) === path.dirname(candidate.path));
@@ -726,7 +901,7 @@ export function scanOrcaResidue(context) {
 
   for (const target of context.sharedStateCandidates) {
     if (pathExists(target)) {
-      findings.push(finding('shared-state', target, '경로가 고정된 Orca 훅·음성 토큰·관리 파일'));
+      findings.push(finding('shared-state', target, '경로가 고정된 Orca 훅·암호화 자격증명·관리 파일'));
     }
   }
   for (const target of managedHookLockResidues(context.home)) {
@@ -837,14 +1012,14 @@ function backupConfig(source, context, dryRun) {
 
 function directManagedString(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  return Object.values(value).some((item) => typeof item === 'string' && ORCA_HOOK_PATTERN.test(item));
+  return Object.values(value).some((item) => isOrcaHookString(item));
 }
 
 function pruneJsonHooks(value) {
   if (Array.isArray(value)) {
     const next = [];
     for (const item of value) {
-      if (typeof item === 'string' && ORCA_HOOK_PATTERN.test(item)) continue;
+      if (isOrcaHookString(item)) continue;
       if (directManagedString(item)) continue;
       const cleaned = pruneJsonHooks(item);
       if (item && typeof item === 'object' && Array.isArray(item.hooks)
@@ -856,7 +1031,7 @@ function pruneJsonHooks(value) {
   if (!value || typeof value !== 'object') return value;
   const next = {};
   for (const [key, child] of Object.entries(value)) {
-    if (typeof child === 'string' && ORCA_HOOK_PATTERN.test(child)) continue;
+    if (isOrcaHookString(child)) continue;
     if (directManagedString(child)) continue;
     const cleaned = pruneJsonHooks(child);
     if (cleaned === undefined) continue;
@@ -918,6 +1093,71 @@ function cleanHermesConfig(target, context, dryRun) {
   return backup;
 }
 
+function editText(target, after, context, dryRun) {
+  if (after === readText(target)) return null;
+  const backup = backupConfig(target, context, dryRun);
+  if (!dryRun) writeAtomic(target, after);
+  return backup;
+}
+
+function cleanJcodeHook(target, context, dryRun) {
+  const text = readText(target);
+  const managed = jcodeManagedHookLines(text);
+  if (managed.size === 0) return null;
+  const { lines, eol } = splitLinesWithEol(text);
+  return editText(target, lines.filter((_, index) => !managed.has(index)).join(eol), context, dryRun);
+}
+
+function cleanDshHook(target, context, dryRun) {
+  const text = readText(target);
+  const { lines, eol } = splitLinesWithEol(text);
+  const region = dshManagedRegion(lines);
+  if (!region) return null;
+  const kept = [...lines.slice(0, region.start), ...lines.slice(region.end + 1)];
+  while (kept.length > 0 && kept[kept.length - 1].trim() === '') kept.pop();
+  // 주석만 남으면 DSH가 읽지 못하므로 Orca와 같이 빈 목록을 되돌려 놓는다.
+  if (kept.every((line) => line.trim() === '' || line.trim().startsWith('#'))) kept.push('[]');
+  return editText(target, `${kept.join(eol)}${eol}`, context, dryRun);
+}
+
+function cleanMuseHook(target, context, dryRun) {
+  const value = readJson(target);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`Muse 설정을 해석할 수 없어 자동 수정하지 않았습니다: ${target}`);
+  }
+  if (!isOrcaHookString(value.managed_hooks_path)) return null;
+  const next = { ...value };
+  delete next.managed_hooks_path;
+  if (Array.isArray(next.managed_hooks_env_vars)) {
+    const kept = next.managed_hooks_env_vars.filter((name) => !MUSE_ORCA_ENV_VARS.has(name));
+    if (kept.length > 0) next.managed_hooks_env_vars = kept;
+    else delete next.managed_hooks_env_vars;
+  }
+  return editText(target, `${JSON.stringify(next, null, 2)}\n`, context, dryRun);
+}
+
+function cleanOpenCodeTuiConfig(target, context, dryRun) {
+  const value = readJson(target);
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.plugin)) {
+    throw new Error(`OpenCode TUI 설정을 해석할 수 없어 자동 수정하지 않았습니다: ${target}`);
+  }
+  const kept = value.plugin.filter((item) => !isOrcaOpenCodeTuiEntry(item));
+  if (kept.length === value.plugin.length) return null;
+  const next = { ...value, plugin: kept };
+  if (kept.length === 0) delete next.plugin;
+  return editText(target, `${JSON.stringify(next, null, 2)}\n`, context, dryRun);
+}
+
+const HOOK_EDITORS = Object.freeze({
+  json: cleanJsonHook,
+  kimi: cleanKimiHook,
+  'hermes-config': cleanHermesConfig,
+  jcode: cleanJcodeHook,
+  dsh: cleanDshHook,
+  muse: cleanMuseHook,
+  'opencode-tui': cleanOpenCodeTuiConfig,
+});
+
 function cleanWindowsUserPath(context, dryRun) {
   const parts = (context.userPath || '').split(';');
   const next = parts.filter((entry) => !isWindowsOrcaPathEntry(entry, context)).join(';');
@@ -970,7 +1210,7 @@ function selected(finding, options) {
 function plannedMutationForFinding(item) {
   if (item.kind === 'skill-lock' || item.kind === 'path-entry') return 'edit';
   if (item.kind !== 'hook') return 'quarantine';
-  if (item.hookType === 'json' || item.hookType === 'kimi' || item.hookType === 'hermes-config') return 'edit';
+  if (Object.hasOwn(HOOK_EDITORS, item.hookType)) return 'edit';
   if (item.hookType === 'codex-legacy' && !item.removeWhole) return 'edit';
   return 'quarantine';
 }
@@ -1063,17 +1303,11 @@ export function cleanOrcaResidue(context, options = {}) {
     }
     try {
       let action;
-      if (item.kind === 'hook' && item.hookType === 'json') {
-        const backup = cleanJsonHook(item.path, context, dryRun);
-        action = { action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item };
-      } else if (item.kind === 'hook' && item.hookType === 'kimi') {
-        const backup = cleanKimiHook(item.path, context, dryRun);
+      if (item.kind === 'hook' && Object.hasOwn(HOOK_EDITORS, item.hookType)) {
+        const backup = HOOK_EDITORS[item.hookType](item.path, context, dryRun);
         action = { action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item };
       } else if (item.kind === 'hook' && item.hookType === 'codex-legacy' && !item.removeWhole) {
         const backup = cleanCodexLegacyHook(item.path, context, dryRun);
-        action = { action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item };
-      } else if (item.kind === 'hook' && item.hookType === 'hermes-config') {
-        const backup = cleanHermesConfig(item.path, context, dryRun);
         action = { action: backup ? (dryRun ? 'would-edit' : 'edited') : 'unchanged', backup, ...item };
       } else if (item.kind === 'skill-lock') {
         const backup = removeLockEntries(item.path, item.names, context, dryRun);
@@ -1438,8 +1672,12 @@ export function restoreOrcaBackup(manifestPath, options = {}) {
 export const internals = {
   CODEX_LEGACY_END,
   CODEX_LEGACY_START,
+  DSH_END,
+  DSH_START,
   KIMI_START,
   KIMI_END,
+  isOrcaHookString,
+  jcodeManagedHookLines,
   LINUX_CLI_DISPATCHER_MARKER,
   LINUX_CLI_COMMAND_NAME,
   hasOrcaSkillSignature,

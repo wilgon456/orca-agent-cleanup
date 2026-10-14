@@ -10,7 +10,7 @@ import {
   verifyOrcaBackup,
 } from './orca-cleanup-core.mjs';
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 
 const HELP = `
 Orca Agent Cleanup v${VERSION} — Windows·macOS·Linux 공통 정리 도구
