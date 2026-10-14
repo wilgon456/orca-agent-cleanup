@@ -6,9 +6,9 @@
 
 Inspect leftover Orca integrations, quarantine verified residue and restore it when needed.
 
-**English** · [한국어](README.ko.md)
+**English** · [한국어](https://github.com/wilgon456/orca-agent-cleanup/blob/main/README.ko.md)
 
-![project: utility](https://img.shields.io/badge/project-utility-22d3ee?style=flat-square) ![stack: Node.js 18+](https://img.shields.io/badge/stack-Node.js%2018%2B-22d3ee?style=flat-square) [![License](https://img.shields.io/badge/license-MIT-22d3ee?style=flat-square)](LICENSE)
+![project: utility](https://img.shields.io/badge/project-utility-22d3ee?style=flat-square) ![stack: Node.js 18+](https://img.shields.io/badge/stack-Node.js%2018%2B-22d3ee?style=flat-square) [![License](https://img.shields.io/badge/license-MIT-22d3ee?style=flat-square)](https://github.com/wilgon456/orca-agent-cleanup/blob/main/LICENSE)
 
 [Quick start](#quick-start) · [Coverage](#cleanup-coverage) · [Restore](#restore)
 
@@ -180,8 +180,8 @@ The legacy Windows interface remains available:
 .\tests\Invoke-SmokeTest.ps1
 ```
 
-See [SECURITY.md](SECURITY.md) for vulnerability reporting. For bug reports, include the OS, whether Orca was uninstalled, a redacted scan result and the expected versus observed behavior.
+See [SECURITY.md](https://github.com/wilgon456/orca-agent-cleanup/blob/main/SECURITY.md) for vulnerability reporting. For bug reports, include the OS, whether Orca was uninstalled, a redacted scan result and the expected versus observed behavior.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](https://github.com/wilgon456/orca-agent-cleanup/blob/main/LICENSE).
