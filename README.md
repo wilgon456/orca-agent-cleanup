@@ -27,7 +27,7 @@ It does **not** uninstall the Orca application itself.
 
 ## Quick start
 
-Requires **Node.js 18 or newer**. The commands work in Windows PowerShell, macOS Terminal and Linux shells. Run it with `npx`; nothing needs to be installed.
+Requires **Node.js 18 or newer**. The commands work in Windows PowerShell, macOS Terminal and Linux shells. Run it with `npx`, which downloads the package as needed.
 
 ```bash
 npx orca-agent-cleanup scan
@@ -46,23 +46,32 @@ cd orca-agent-cleanup
 npx orca-agent-cleanup scan
 ```
 
-**Preview** cleanup including application data, voice data and leftover Orca processes. If Orca is still installed or running you will see a ⛔ warning; uninstall the app first.
+**Preview** the default cleanup. If Orca is still installed or running you will see a ⛔ warning; uninstall the app first.
 
 ```bash
-npx orca-agent-cleanup clean --dry-run --include-app-data --include-voice-data --stop-processes
+npx orca-agent-cleanup clean --dry-run
 ```
 
 **Apply** the reviewed cleanup:
 
 ```bash
-npx orca-agent-cleanup clean --include-app-data --include-voice-data --stop-processes
+npx orca-agent-cleanup clean
 ```
 
-The command reports the backup location. Replace the placeholder below with that actual path:
+The command reports the backup location. Replace the placeholder below with that actual path, then verify the backup:
 
 ```bash
 npx orca-agent-cleanup verify --manifest /path/to/backup/manifest.json
 ```
+
+If needed, preview and then restore the backup:
+
+```bash
+npx orca-agent-cleanup restore --dry-run --manifest /path/to/backup/manifest.json
+npx orca-agent-cleanup restore --manifest /path/to/backup/manifest.json
+```
+
+App data, voice caches, extra user or project state, and stopping processes require separate options. Review the coverage below and include the same options in the preview before applying them. Stopped processes are not restarted by restoring files.
 
 Restart your coding agents and terminals afterward so their cached skill lists and environment variables are refreshed.
 

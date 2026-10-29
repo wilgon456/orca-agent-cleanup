@@ -91,7 +91,7 @@ Node.js 18 이상이 필요합니다. Windows PowerShell, macOS Terminal, Linux 
 
 ### 1. 실행 방법
 
-설치할 필요 없이 `npx`로 바로 실행합니다.
+`npx`로 실행합니다. 필요한 패키지는 실행할 때 내려받습니다.
 
 ```bash
 npx orca-agent-cleanup scan
@@ -114,24 +114,34 @@ npx orca-agent-cleanup scan
 
 ### 3. 정리 결과 미리보기
 
-앱 데이터와 음성 모델, 남아 도는 Orca 프로세스까지 포함한 예정 작업을 확인합니다. Orca 앱이 아직 설치돼 있거나 실행 중이면 여기서 ⛔ 표시가 나옵니다. 그때는 앱부터 제거하세요.
+기본 정리 범위에서 바뀔 항목을 확인합니다. Orca 앱이 아직 설치돼 있거나 실행 중이면 여기서 ⛔ 표시가 나옵니다. 그때는 앱부터 제거하세요.
 
 ```bash
-npx orca-agent-cleanup clean --dry-run --include-app-data --include-voice-data --stop-processes
+npx orca-agent-cleanup clean --dry-run
 ```
 
 ### 4. 복구 가능하게 정리
 
 ```bash
-npx orca-agent-cleanup clean --include-app-data --include-voice-data --stop-processes
+npx orca-agent-cleanup clean
 ```
 
 ### 5. 백업 무결성 확인
 
+`clean`이 출력한 백업 위치로 아래 경로를 바꾸어 확인합니다.
+
 ```bash
-npx orca-agent-cleanup verify \
-  --manifest ~/OrcaAgentCleanupBackups/<실행시각-UUID>/manifest.json
+npx orca-agent-cleanup verify --manifest /path/to/backup/manifest.json
 ```
+
+필요하면 복원할 내용도 미리 확인한 뒤 복원할 수 있습니다.
+
+```bash
+npx orca-agent-cleanup restore --dry-run --manifest /path/to/backup/manifest.json
+npx orca-agent-cleanup restore --manifest /path/to/backup/manifest.json
+```
+
+앱 데이터·음성 캐시, 사용자·프로젝트 상태와 프로세스 종료는 별도 옵션입니다. 아래 범위를 확인하고, 옵션을 적용하기 전에 같은 옵션을 붙여 미리보기부터 실행하세요. 종료한 프로세스는 파일을 복원해도 다시 실행되지 않습니다.
 
 정리가 끝나면 Claude, Codex와 터미널을 완전히 종료한 뒤 다시 실행하세요. 기존 세션이 스킬 목록이나 환경 변수를 캐시하고 있을 수 있습니다.
 
