@@ -39,7 +39,7 @@ Orca v1.4.224와 2026-10-14 `main` 브랜치를 기준으로 다시 검증했습
 - Windows에서 PowerShell 명령이나 `-EncodedCommand`(base64)로 감싼 훅 명령도 풀어서 식별합니다.
 - Orca가 새로 저장하는 Bitbucket·Linear·Jira·ZCode·OpenCode Go·MiniMax 암호화 자격증명을 격리합니다.
 - `~/.gemini/config/skills`, `~/.config/muse/skills`, `~/.zcode/skills` 스킬 폴더를 검사합니다.
-- 상류 감시가 훅 관련 계약 파일과 에이전트 연동 목록의 변화도 알립니다.
+- 당시 상류 감시에 훅 관련 계약 파일과 에이전트 연동 목록을 추가했습니다. 현재 자동 감시 워크플로는 비활성화되어 있습니다.
 
 ## v1.3.0
 
@@ -178,7 +178,7 @@ Orca v1.4.243의 공식 manifest에 등록된 다음 스킬을 검사합니다.
 
 `CLAUDE_CONFIG_DIR`, `GROK_HOME`, `HERMES_HOME`, `KIRO_HOME`, `OPENCLAUDE_CONFIG_DIR`으로 이동된 Skills와 Windows의 `%LOCALAPPDATA%\hermes\skills`도 검사합니다. Skills 설치가 중단되어 남은 `.orca-skill-extract-*`, `.*.orca-staging-*`, `.*.orca-placement-*` 등 Orca 전용 트랜잭션 경로도 격리합니다.
 
-`--project`를 사용하면 프로젝트의 `.agents`, `.claude`, `.factory`, `.continue`, `.trae`, `.grok`, `.augment` 스킬 폴더도 검사합니다.
+`--project`를 사용하면 프로젝트의 `.agents`, `.claude`, `.factory`, `.continue`, `.trae`, `.grok`, `.augment`, `.codebuddy`, `.kiro`, `.openclaude` 스킬 폴더도 검사합니다.
 
 ```bash
 npx orca-agent-cleanup scan --project /path/to/project
