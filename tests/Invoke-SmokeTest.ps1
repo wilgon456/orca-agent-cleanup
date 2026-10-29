@@ -27,12 +27,16 @@ function Assert-True {
 try {
     $orcaSkill = Join-Path $testHome '.agents\skills\computer-use'
     $futureOrcaSkill = Join-Path $testHome '.agents\skills\agent-link'
+    $jiraSkill = Join-Path $testHome '.agents\skills\jira-tickets'
+    $unrelatedJira = Join-Path $testHome '.agents\skills\orca-jira'
     $paseoSkill = Join-Path $testHome '.agents\skills\paseo'
     $claudeDir = Join-Path $testHome '.claude'
-    New-Item -ItemType Directory -Path $orcaSkill, $futureOrcaSkill, $paseoSkill, $claudeDir, (Join-Path $testHome '.orca\agent-hooks'), (Join-Path $roaming 'Orca'), (Join-Path $local 'Orca') -Force | Out-Null
+    New-Item -ItemType Directory -Path $orcaSkill, $futureOrcaSkill, $jiraSkill, $unrelatedJira, $paseoSkill, $claudeDir, (Join-Path $testHome '.orca\agent-hooks'), (Join-Path $roaming 'Orca'), (Join-Path $local 'Orca') -Force | Out-Null
 
     Set-Content -LiteralPath (Join-Path $orcaSkill 'SKILL.md') -Encoding UTF8 -Value "Use Orca's computer-use CLI. Run ORCA skills get computer-use."
     Set-Content -LiteralPath (Join-Path $futureOrcaSkill 'SKILL.md') -Encoding UTF8 -Value 'Future Orca integration skill.'
+    Set-Content -LiteralPath (Join-Path $jiraSkill 'SKILL.md') -Encoding UTF8 -Value 'Run ORCA skills get jira-tickets.'
+    Set-Content -LiteralPath (Join-Path $unrelatedJira 'SKILL.md') -Encoding UTF8 -Value 'A Jira skill from another provider.'
     Set-Content -LiteralPath (Join-Path $paseoSkill 'SKILL.md') -Encoding UTF8 -Value 'Paseo reference.'
     Set-Content -LiteralPath (Join-Path $testHome '.orca\agent-hooks\claude-hook.cmd') -Encoding UTF8 -Value '@echo off'
     Set-Content -LiteralPath (Join-Path $testHome '.orca\user-worktree.txt') -Encoding UTF8 -Value 'keep user work'
@@ -80,6 +84,8 @@ try {
 
     Assert-True -Condition (-not (Test-Path -LiteralPath $orcaSkill)) -Message 'Orca computer-use skill should be quarantined'
     Assert-True -Condition (-not (Test-Path -LiteralPath $futureOrcaSkill)) -Message 'Any lock-proven Orca skill should be quarantined'
+    Assert-True -Condition (-not (Test-Path -LiteralPath $jiraSkill)) -Message 'Signed Jira skill should be quarantined'
+    Assert-True -Condition (Test-Path -LiteralPath $unrelatedJira) -Message 'Unrelated same-name Jira skill must remain'
     Assert-True -Condition (Test-Path -LiteralPath $paseoSkill) -Message 'Paseo skill must remain untouched'
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $testHome '.orca\agent-hooks'))) -Message 'Orca agent-hooks should be quarantined'
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path $testHome '.orca\user-worktree.txt')) -Message 'Unrelated ~/.orca user files should be preserved'

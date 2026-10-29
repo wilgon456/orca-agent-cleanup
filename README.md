@@ -21,13 +21,13 @@ Inspect leftover Orca integrations, quarantine verified residue and restore it w
 
 ## Why use it
 
-Removing Orca can leave shared skills, agent hooks, launchers, cached models and configuration behind. Agents may keep trying to call a missing Orca CLI or computer-use integration. This tool identifies residue using the upstream Orca manifest, ownership markers and signatures, then moves verified items into a recoverable backup.
+Removing Orca can leave shared skills, agent hooks, launchers, cached models and configuration behind. Agents may keep trying to call a missing Orca CLI or computer-use integration. This tool identifies residue using a reviewed Orca manifest, ownership markers and signatures, then moves verified items into a recoverable backup.
 
 It does **not** uninstall the Orca application itself.
 
 ## Quick start
 
-Requires **Node.js 18 or newer**. The commands work in Windows PowerShell, macOS Terminal and Linux shells. Run it with `npx`; nothing needs to be installed.
+Requires **Node.js 18 or newer**. The commands work in Windows PowerShell, macOS Terminal and Linux shells. Run it with `npx`, which downloads the package as needed.
 
 ```bash
 npx orca-agent-cleanup scan
@@ -46,23 +46,32 @@ cd orca-agent-cleanup
 npx orca-agent-cleanup scan
 ```
 
-**Preview** cleanup including application data, voice data and leftover Orca processes. If Orca is still installed or running you will see a ⛔ warning; uninstall the app first.
+**Preview** the default cleanup. If Orca is still installed or running you will see a ⛔ warning; uninstall the app first.
 
 ```bash
-npx orca-agent-cleanup clean --dry-run --include-app-data --include-voice-data --stop-processes
+npx orca-agent-cleanup clean --dry-run
 ```
 
 **Apply** the reviewed cleanup:
 
 ```bash
-npx orca-agent-cleanup clean --include-app-data --include-voice-data --stop-processes
+npx orca-agent-cleanup clean
 ```
 
-The command reports the backup location. Replace the placeholder below with that actual path:
+The command reports the backup location. Replace the placeholder below with that actual path, then verify the backup:
 
 ```bash
 npx orca-agent-cleanup verify --manifest /path/to/backup/manifest.json
 ```
+
+If needed, preview and then restore the backup:
+
+```bash
+npx orca-agent-cleanup restore --dry-run --manifest /path/to/backup/manifest.json
+npx orca-agent-cleanup restore --manifest /path/to/backup/manifest.json
+```
+
+App data, voice caches, extra user or project state, and stopping processes require separate options. Review the coverage below and include the same options in the preview before applying them. Stopped processes are not restarted by restoring files.
 
 Restart your coding agents and terminals afterward so their cached skill lists and environment variables are refreshed.
 
@@ -70,7 +79,7 @@ Restart your coding agents and terminals afterward so their cached skill lists a
 
 | Target | Included by default? |
 | --- | --- |
-| Eight official Orca skills and signed copies in Codex plugin caches | Yes, after ownership verification |
+| Ten reviewed Orca skills and signed copies in Codex plugin caches | Yes, after ownership verification |
 | Orca-managed agent hooks and marked extensions (24 agent integrations, see below) | Yes |
 | Verified user CLI launchers and Orca PATH entries | Yes |
 | Orca background processes left running after the app was removed | `--stop-processes` |
@@ -86,7 +95,7 @@ Hook cleanup follows every agent integration in Orca's `src/main/*/hook-service.
 
 The credential files are `openai-speech-token.enc`, `bitbucket-credential.*`, `linear-token.enc`, `linear-workspaces.json`, `jira-tokens`, `jira-sites.json`, `zcode-plan-api-key.enc`, `opencode-go-api-key.enc` and `minimax-*.enc`. Orca encrypts them with its own app key, so they are useless once the app is gone. Other files under `~/.orca`, such as worktrees and `keybindings.json`, stay unless you pass `--include-user-state`.
 
-The official skill names are `computer-use`, `orca-cli`, `orchestration`, `orca-per-workspace-env`, `orca-emulator`, `orca-emulator-android`, `orca-linear` and `linear-tickets`. A matching name alone is insufficient: unrelated providers' skills, including OpenAI's computer-use and Paseo skills, are preserved.
+The reviewed Orca v1.4.243 skill names are `computer-use`, `orca-cli`, `orchestration`, `orca-per-workspace-env`, `orca-emulator`, `orca-emulator-android`, `orca-linear`, `linear-tickets`, `orca-jira` and `jira-tickets`. A matching name alone is insufficient: unrelated providers' skills, including OpenAI's computer-use and Paseo skills, are preserved. The other cleanup contracts remain based on the v1.4.224 review; changes in later Orca versions have not all been assessed.
 
 ## Platforms
 
@@ -151,6 +160,15 @@ Use `npx orca-agent-cleanup --help` for the complete interface. In PowerShell, u
 Automatic cleanup does not remove the app, change macOS privacy permissions, uninstall Windows app entries, delete package-managed Linux installations, start stopped WSL distributions or log into SSH hosts. It preserves unverified skills, user source/workspaces, historical chats and credentials belonging to other software.
 
 The app can be uninstalled through Windows Settings, the macOS Applications folder or the Linux installation method you originally used. Complete that step before cleaning its integrations.
+
+## Version 1.5.2
+
+The two Jira skills added by Orca are included in the reviewed skill names.
+CodeBuddy, Kiro and OpenClaude skill roots are checked in the home and in
+explicitly selected projects; `KIRO_HOME` and `OPENCLAUDE_CONFIG_DIR` are also
+checked when set. The same ownership checks, preview, backup and restore rules
+apply. Other upstream changes after the v1.4.224 contract review still need
+separate assessment.
 
 ## Version 1.5.0
 

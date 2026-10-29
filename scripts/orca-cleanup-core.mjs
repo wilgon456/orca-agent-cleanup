@@ -6,10 +6,12 @@ import { createHash, randomUUID } from 'node:crypto';
 
 export const OFFICIAL_ORCA_SKILLS = Object.freeze([
   'computer-use',
+  'jira-tickets',
   'linear-tickets',
   'orca-cli',
   'orca-emulator',
   'orca-emulator-android',
+  'orca-jira',
   'orca-linear',
   'orca-per-workspace-env',
   'orchestration',
@@ -36,6 +38,9 @@ export const HOME_SKILL_ROOTS = Object.freeze([
   '.augment/skills',
   '.config/muse/skills',
   '.zcode/skills',
+  '.codebuddy/skills',
+  '.kiro/skills',
+  '.openclaude/skills',
 ]);
 
 // Orca가 프로젝트에서 추가로 검사하는 스킬 루트.
@@ -47,6 +52,9 @@ export const PROJECT_SKILL_ROOTS = Object.freeze([
   '.trae/skills',
   '.grok/skills',
   '.augment/skills',
+  '.codebuddy/skills',
+  '.kiro/skills',
+  '.openclaude/skills',
 ]);
 
 const LINUX_CLI_DISPATCHER_MARKER = '# orca-serve-bare-orca-dispatcher';
@@ -192,6 +200,8 @@ function environmentSkillRoots(platform, home, env) {
     env.CLAUDE_CONFIG_DIR && path.join(env.CLAUDE_CONFIG_DIR, 'skills'),
     env.GROK_HOME && path.join(env.GROK_HOME, 'skills'),
     env.HERMES_HOME && path.join(env.HERMES_HOME, 'skills'),
+    env.KIRO_HOME && path.join(env.KIRO_HOME, 'skills'),
+    env.OPENCLAUDE_CONFIG_DIR && path.join(env.OPENCLAUDE_CONFIG_DIR, 'skills'),
   ];
   if (platform === 'win32' && env.LOCALAPPDATA) {
     roots.push(path.join(env.LOCALAPPDATA, 'hermes', 'skills'));

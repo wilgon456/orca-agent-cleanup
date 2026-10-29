@@ -118,10 +118,12 @@ $lockPath = Join-Path $agentsRoot '.skill-lock.json'
 $claudeSettingsPath = Join-Path (Join-Path $homeFull '.claude') 'settings.json'
 $orcaSkillNames = @(
     'computer-use',
+    'jira-tickets',
     'linear-tickets',
     'orca-cli',
     'orca-emulator',
     'orca-emulator-android',
+    'orca-jira',
     'orca-linear',
     'orca-per-workspace-env',
     'orchestration'
