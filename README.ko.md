@@ -20,7 +20,11 @@
 > 이 저장소는 Orca 또는 Stably와 관계없는 커뮤니티 도구입니다.<br>
 > 먼저 Orca 앱을 정상 제거하고 Claude, Codex 등 관련 에이전트를 모두 종료한 뒤 사용하세요.
 
-## 🆕 v1.5.0
+## 🆕 v1.5.2
+
+Orca v1.4.243에 추가된 `jira-tickets`와 `orca-jira`를 스킬 탐색에 포함합니다. CodeBuddy·Kiro·OpenClaude의 홈과 지정한 프로젝트 스킬 폴더도 검사합니다. 이름뿐 아니라 Orca 출처를 확인한 항목만 미리보기와 백업 대상에 넣습니다. 다른 정리 규칙은 v1.4.224 검토 기준을 유지하며, 이후 변경 전체를 검증한 것은 아닙니다.
+
+## v1.5.0
 
 - `npx orca-agent-cleanup`으로 설치 없이 바로 실행합니다.
 - Orca 앱이 아직 설치돼 있거나 실행 중이면 `clean`을 멈춥니다. Orca는 켜질 때 훅과 플러그인을 다시 설치하므로, 앱을 두고 정리하면 다음 실행 때 되돌아가고 쓰던 자격증명만 격리돼 앱이 망가집니다. 그래도 진행하려면 `--force`를 붙입니다.
@@ -43,7 +47,7 @@ Orca v1.4.224와 2026-10-14 `main` 브랜치를 기준으로 다시 검증했습
 - 정리 전에 manifest v2 journal을 만들고 각 작업 전후 상태를 기록해 중단된 정리도 `restore`로 복구할 수 있습니다.
 - 백업 파일과 디렉터리 내용의 SHA-256을 기록하며 `verify` 명령으로 복원 전에 손상을 확인합니다.
 - 기본 백업 경로에 UUID를 사용하고 비어 있지 않은 사용자 지정 백업 폴더는 거부합니다.
-- 공식 Orca 스킬·설치·캐시 계약의 변경을 매일 확인하고 차이가 생기면 Issue를 생성합니다.
+- 상류 감시 워크플로를 활성화하면 Orca 스킬·설치·캐시 계약의 변경을 확인하고 차이가 생기면 Issue를 생성합니다. 이 저장소에서는 2026-10-29 기준 수동으로 비활성화돼 있습니다.
 - GitHub Actions를 커밋 SHA로 고정하고 CodeQL 및 Node.js 24 검증을 추가했습니다.
 
 > [!NOTE]
@@ -59,13 +63,13 @@ Orca 앱을 제거해도 공용 스킬 폴더와 각 에이전트 설정에는 �
 - 삭제된 Orca 실행 경로가 `PATH` 또는 `/usr/local/bin/orca`에 남음
 - 앱 데이터와 음성 모델이 디스크 공간을 계속 차지함
 
-이 도구는 [Orca 공식 저장소](https://github.com/stablyai/orca)의 현재 스킬 manifest와 설치 코드를 기준으로 잔재를 식별합니다.
+이 도구는 확인한 [Orca 공식 저장소](https://github.com/stablyai/orca)의 스킬 manifest와 설치 코드를 기준으로 잔재를 식별합니다.
 
 ## ✅ 지원 범위 한눈에 보기
 
 | 정리 대상 | Windows | macOS | Linux | 기본 정리 |
 | --- | :---: | :---: | :---: | :---: |
-| Orca 공식 스킬 8종 | ✅ | ✅ | ✅ | ✅ |
+| 확인한 Orca 공식 스킬 10종 | ✅ | ✅ | ✅ | ✅ |
 | Codex 플러그인 캐시의 서명된 Orca 스킬 | ✅ | ✅ | ✅ | ✅ |
 | `computer-use`·`orca-cli`·`orchestration` | ✅ | ✅ | ✅ | ✅ |
 | Claude·Codex·Gemini 등 Orca 관리형 훅 | ✅ | ✅ | ✅ | ✅ |
@@ -144,9 +148,9 @@ npx orca-agent-cleanup verify \
 
 ## 🧹 무엇을 정리하나요?
 
-### 공식 번들 스킬 8종
+### 공식 번들 스킬 10종
 
-Orca의 현재 공식 manifest에 등록된 다음 스킬을 검사합니다.
+Orca v1.4.243의 공식 manifest에 등록된 다음 스킬을 검사합니다.
 
 | 영역 | 스킬 |
 | --- | --- |
@@ -154,6 +158,7 @@ Orca의 현재 공식 manifest에 등록된 다음 스킬을 검사합니다.
 | 오케스트레이션 | `orchestration`, `orca-per-workspace-env` |
 | 에뮬레이터 | `orca-emulator`, `orca-emulator-android` |
 | Linear 연동 | `orca-linear`, `linear-tickets` |
+| Jira 연동 | `orca-jira`, `jira-tickets` |
 
 검사하는 사용자 스킬 위치:
 
@@ -167,10 +172,11 @@ Orca의 현재 공식 manifest에 등록된 다음 스킬을 검사합니다.
 ~/.factory/skills               ~/.continue/skills
 ~/.trae-cn/skills               ~/.augment/skills
 ~/.gemini/config/skills         ~/.config/muse/skills
-~/.zcode/skills
+~/.zcode/skills                 ~/.codebuddy/skills
+~/.kiro/skills                  ~/.openclaude/skills
 ```
 
-`CLAUDE_CONFIG_DIR`, `GROK_HOME`, `HERMES_HOME`으로 이동된 Skills와 Windows의 `%LOCALAPPDATA%\hermes\skills`도 검사합니다. Skills 설치가 중단되어 남은 `.orca-skill-extract-*`, `.*.orca-staging-*`, `.*.orca-placement-*` 등 Orca 전용 트랜잭션 경로도 격리합니다.
+`CLAUDE_CONFIG_DIR`, `GROK_HOME`, `HERMES_HOME`, `KIRO_HOME`, `OPENCLAUDE_CONFIG_DIR`으로 이동된 Skills와 Windows의 `%LOCALAPPDATA%\hermes\skills`도 검사합니다. Skills 설치가 중단되어 남은 `.orca-skill-extract-*`, `.*.orca-staging-*`, `.*.orca-placement-*` 등 Orca 전용 트랜잭션 경로도 격리합니다.
 
 `--project`를 사용하면 프로젝트의 `.agents`, `.claude`, `.factory`, `.continue`, `.trae`, `.grok`, `.augment` 스킬 폴더도 검사합니다.
 
@@ -275,7 +281,7 @@ npx orca-agent-cleanup clean --dry-run --include-remote --remote-home /mnt/remot
 
 | 항목 | 자동 정리되는 조건 |
 | --- | --- |
-| 스킬 | 공식 이름 8종이면서 해당 스킬 폴더의 `stablyai/orca` 잠금 출처 또는 Orca 고유 문구가 확인됨 |
+| 스킬 | 확인한 공식 이름 10종이면서 해당 스킬 폴더의 `stablyai/orca` 잠금 출처 또는 Orca 고유 문구가 확인됨 |
 | Codex 플러그인 캐시 | 깊이·항목 수를 제한해 탐색하고 `skills/<공식 이름>/SKILL.md`의 Orca 서명이 확인됨 |
 | 프로젝트 스킬 | `--project`로 지정한 해당 프로젝트의 잠금 파일과 스킬 폴더가 서로 일치함 |
 | 에이전트 훅 | 명령이 정확히 `.orca/agent-hooks`를 참조하거나(PowerShell·base64로 감싼 명령은 풀어서 확인) Orca 관리 표식이 확인됨 |
@@ -409,7 +415,7 @@ Windows 전용 이전 인터페이스도 호환성을 위해 유지합니다.
 .\scripts\Remove-OrcaAgentIntegrations.ps1 -Apply -IncludeAppData -WhatIf
 ```
 
-새로운 스킬 8종, 여러 에이전트 훅, 음성 데이터, macOS·Linux까지 포함하려면 공통 Node.js 도구 사용을 권장합니다.
+여러 에이전트의 스킬 폴더와 훅, 음성 데이터, macOS·Linux까지 함께 검사하려면 공통 Node.js 도구 사용을 권장합니다.
 
 ## 🧪 테스트
 

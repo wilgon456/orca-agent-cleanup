@@ -55,11 +55,79 @@ function fakeContext(root, platform, extras = {}) {
   });
 }
 
-test('공식 manifest의 8개 스킬 이름을 모두 포함한다', () => {
+test('공식 manifest의 10개 스킬 이름을 모두 포함한다', () => {
   assert.deepEqual(OFFICIAL_ORCA_SKILLS, [
-    'computer-use', 'linear-tickets', 'orca-cli', 'orca-emulator',
-    'orca-emulator-android', 'orca-linear', 'orca-per-workspace-env', 'orchestration',
+    'computer-use', 'jira-tickets', 'linear-tickets', 'orca-cli', 'orca-emulator',
+    'orca-emulator-android', 'orca-jira', 'orca-linear', 'orca-per-workspace-env', 'orchestration',
   ]);
+});
+
+test('최신 Jira 스킬은 출처가 확인될 때만 격리하고 복원한다', () => {
+  const root = makeSandbox('jira-skills');
+  const context = fakeContext(root, 'linux', { appDataCandidates: [], voiceCandidates: [] });
+  const signed = path.join(context.home, '.claude', 'skills', 'jira-tickets');
+  const locked = path.join(context.home, '.agents', 'skills', 'orca-jira');
+  const unrelated = path.join(context.home, '.codex', 'skills', 'jira-tickets');
+  write(path.join(signed, 'SKILL.md'), 'Use ORCA skills get jira-tickets.\n');
+  write(path.join(locked, 'SKILL.md'), 'A bundled skill verified by its lock entry.\n');
+  write(path.join(unrelated, 'SKILL.md'), 'Unrelated Jira skill by another provider.\n');
+  writeJson(path.join(context.home, '.agents', '.skill-lock.json'), {
+    skills: { 'orca-jira': { source: 'stablyai/orca' } },
+  });
+
+  const findings = scanOrcaResidue(context);
+  assert(findings.some((item) => item.kind === 'skill' && item.path === signed));
+  assert(findings.some((item) => item.kind === 'skill' && item.path === locked));
+  assert(!findings.some((item) => item.path === unrelated));
+  const preview = cleanOrcaResidue(context, { dryRun: true });
+  assert(preview.actions.some((item) => item.path === signed && item.action === 'would-quarantine'));
+  assert(exists(signed) && exists(locked) && exists(unrelated));
+  const cleaned = cleanOrcaResidue(context, {});
+  assert.equal(cleaned.errors.length, 0);
+  assert(!exists(signed) && !exists(locked) && exists(unrelated));
+  const manifest = path.join(context.backupRoot, 'manifest.json');
+  assert.equal(verifyOrcaBackup(manifest, { platform: 'linux' }).valid, true);
+  assert.equal(restoreOrcaBackup(manifest, { home: context.home, platform: 'linux' }).errors.length, 0);
+  assert(exists(signed) && exists(locked) && exists(unrelated));
+});
+
+test('새 에이전트 스킬 경로와 지정 홈에서도 Orca 출처만 탐지한다', () => {
+  const root = makeSandbox('provider-skill-roots');
+  const home = path.join(root, 'home');
+  const project = path.join(root, 'project');
+  const kiroHome = path.join(root, 'kiro-custom');
+  const openClaudeHome = path.join(root, 'openclaude-custom');
+  const context = buildContext({
+    platform: 'linux', home, projects: [project],
+    env: { KIRO_HOME: kiroHome, OPENCLAUDE_CONFIG_DIR: openClaudeHome },
+    backupRoot: path.join(root, 'backup'), cliCandidates: [], appDataCandidates: [], voiceCandidates: [],
+  });
+  const owned = [
+    path.join(home, '.codebuddy', 'skills', 'jira-tickets'),
+    path.join(home, '.kiro', 'skills', 'orca-jira'),
+    path.join(home, '.openclaude', 'skills', 'jira-tickets'),
+    path.join(project, '.codebuddy', 'skills', 'orca-jira'),
+    path.join(project, '.kiro', 'skills', 'jira-tickets'),
+    path.join(project, '.openclaude', 'skills', 'orca-jira'),
+    path.join(kiroHome, 'skills', 'jira-tickets'),
+    path.join(openClaudeHome, 'skills', 'orca-jira'),
+  ];
+  for (const target of owned) write(path.join(target, 'SKILL.md'), 'Run ORCA skills get jira-tickets.\n');
+  const unrelated = path.join(home, '.openclaude', 'skills', 'orca-jira');
+  write(path.join(unrelated, 'SKILL.md'), 'A different provider owns this skill.\n');
+
+  const findings = scanOrcaResidue(context);
+  for (const target of owned) assert(findings.some((item) => item.kind === 'skill' && item.path === target), target);
+  assert(!findings.some((item) => item.path === unrelated));
+  const cleaned = cleanOrcaResidue(context, {});
+  assert.equal(cleaned.errors.length, 0);
+  for (const target of owned) assert(!exists(target), target);
+  assert(exists(unrelated));
+  const manifest = path.join(context.backupRoot, 'manifest.json');
+  assert.equal(verifyOrcaBackup(manifest, { platform: 'linux' }).valid, true);
+  assert.equal(restoreOrcaBackup(manifest, { home, platform: 'linux' }).errors.length, 0);
+  for (const target of owned) assert(exists(target), target);
+  assert(exists(unrelated));
 });
 
 test('같은 밀리초에 생성한 복원 작업 ID도 충돌하지 않는다', () => {
@@ -361,6 +429,9 @@ test('Orca 공식 스킬 발견 루트를 모두 포함한다', () => {
     '.augment/skills',
     '.config/muse/skills',
     '.zcode/skills',
+    '.codebuddy/skills',
+    '.kiro/skills',
+    '.openclaude/skills',
   ]);
   assert.deepEqual(PROJECT_SKILL_ROOTS, [
     '.agents/skills',
@@ -370,6 +441,9 @@ test('Orca 공식 스킬 발견 루트를 모두 포함한다', () => {
     '.trae/skills',
     '.grok/skills',
     '.augment/skills',
+    '.codebuddy/skills',
+    '.kiro/skills',
+    '.openclaude/skills',
   ]);
 });
 
@@ -520,9 +594,13 @@ test('Codex 플러그인 캐시에서는 서명된 Orca 스킬만 격리한다',
   const pluginCache = path.join(context.home, '.codex', 'plugins', 'cache');
   context.pluginCacheRoots = [pluginCache];
   const orcaSkill = path.join(pluginCache, 'stablyai', 'orca', '1.0.0', 'skills', 'orca-cli');
+  const orcaJira = path.join(pluginCache, 'stablyai', 'orca', '1.0.0', 'skills', 'jira-tickets');
   const unrelated = path.join(pluginCache, 'example', 'plugin', '1.0.0', 'skills', 'computer-use');
+  const unrelatedJira = path.join(pluginCache, 'example', 'plugin', '1.0.0', 'skills', 'jira-tickets');
   write(path.join(orcaSkill, 'SKILL.md'), 'Use `ORCA skills get orca-cli` for the current guide.\n');
+  write(path.join(orcaJira, 'SKILL.md'), 'Use `ORCA skills get jira-tickets` for the current guide.\n');
   write(path.join(unrelated, 'SKILL.md'), 'Generic computer automation skill.\n');
+  write(path.join(unrelatedJira, 'SKILL.md'), 'A Jira skill from another provider.\n');
 
   const findings = scanOrcaResidue(context);
   const orcaSkillIdentity = context.filesystemIdentity(orcaSkill);
@@ -531,9 +609,14 @@ test('Codex 플러그인 캐시에서는 서명된 Orca 스킬만 격리한다',
     context.filesystemIdentity(item.path) === orcaSkillIdentity && item.kind === 'skill'
   )));
   assert(!findings.some((item) => context.filesystemIdentity(item.path) === unrelatedIdentity));
+  assert(findings.some((item) => item.kind === 'skill'
+    && context.filesystemIdentity(item.path) === context.filesystemIdentity(orcaJira)));
+  assert(!findings.some((item) => context.filesystemIdentity(item.path) === context.filesystemIdentity(unrelatedJira)));
   cleanOrcaResidue(context, {});
   assert(!exists(orcaSkill));
+  assert(!exists(orcaJira));
   assert(exists(unrelated));
+  assert(exists(unrelatedJira));
 });
 
 test('사용자 지정 에이전트 홈의 Skills와 Kimi·Hermes 훅을 정리한다', () => {
